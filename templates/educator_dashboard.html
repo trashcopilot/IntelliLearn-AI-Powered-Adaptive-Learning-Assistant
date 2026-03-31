@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Educator Dashboard</h2>
+<p class="text-muted">Upload lecture material, review AI drafts, and verify before release.</p>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5>Upload Lecture Material</h5>
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    <button type="submit" class="btn btn-success">Upload &amp; Generate AI Draft</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5>AI Generated Summaries (Verification Queue)</h5>
+                {% for summary in summaries %}
+                    <div class="border rounded p-3 mb-3">
+                        <h6>{{ summary.Lecture.Title }}</h6>
+                        <p>{{ summary.SummaryText }}</p>
+                        {% if summary.IsVerified %}
+                            <span class="badge bg-success">Verified</span>
+                            <a href="{% url 'content:download_summary' summary.pk %}" class="btn btn-sm btn-outline-secondary ms-2">Download Summary</a>
+                            <a href="{% url 'content:publish_quiz' summary.Lecture.pk %}" class="btn btn-sm btn-primary ms-2">Publish Quiz</a>
+                        {% else %}
+                            <a href="{% url 'content:verify_summary' summary.pk %}" class="btn btn-sm btn-outline-primary">Mark as Verified</a>
+                        {% endif %}
+                    </div>
+                {% empty %}
+                    <p>No summary generated yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

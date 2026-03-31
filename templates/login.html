@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <h2 class="mb-4">Sign in</h2>
+        <form method="post" class="card card-body shadow-sm">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit" class="btn btn-primary">Login</button>
+        </form>
+        <div class="card card-body shadow-sm mt-3">
+            <p class="mb-2">New here? Create an account first:</p>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{% url 'users:signup_student' %}" class="btn btn-outline-primary">Sign up as Student</a>
+                <a href="{% url 'users:signup_educator' %}" class="btn btn-outline-secondary">Sign up as Educator</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

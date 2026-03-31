@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Student Dashboard</h2>
+<p class="text-muted">Track your progress and continue adaptive learning.</p>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5>Available Concepts</h5>
+                <ul class="list-group">
+                    {% for concept in concepts %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>{{ concept.ConceptName }}</span>
+                            <a class="btn btn-sm btn-primary" href="{% url 'learning:start_quiz' concept.pk %}">Start Quiz</a>
+                        </li>
+                    {% empty %}
+                        <li class="list-group-item">No concepts available yet.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5>Last 7 Attempts</h5>
+                <canvas id="progressChart" height="120"></canvas>
+                <table class="table mt-3">
+                    <thead><tr><th>Concept</th><th>Score</th><th>Date</th></tr></thead>
+                    <tbody>
+                    {% for item in attempt_data %}
+                        <tr>
+                            <td>{{ item.concept_name }}</td>
+                            <td>{{ item.attempt.TotalScore }}%</td>
+                            <td>{{ item.attempt.StartTime|date:'Y-m-d H:i' }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="3">No attempts yet.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-1">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5>Verified Summaries</h5>
+                <ul class="list-group">
+                    {% for summary in verified_summaries %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>{{ summary.Lecture.Title }}</span>
+                            <a class="btn btn-sm btn-outline-secondary" href="{% url 'content:download_summary' summary.pk %}">Download Summary</a>
+                        </li>
+                    {% empty %}
+                        <li class="list-group-item">No verified summaries available yet.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
