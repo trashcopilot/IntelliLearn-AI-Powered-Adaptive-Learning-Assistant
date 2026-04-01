@@ -1,24 +1,17 @@
 from django import forms
 
-from .models import LectureMaterial
-
 ALLOWED_EXTENSIONS = ('.pdf', '.docx', '.doc', '.txt', '.mp3', '.wav', '.m4a', '.mp4', '.mov')
 
 
-class LectureUploadForm(forms.ModelForm):
-    class Meta:
-        model = LectureMaterial
-        fields = ['Title', 'FilePath']
-        widgets = {
-            'Title': forms.TextInput(attrs={'class': 'form-control'}),
-            'FilePath': forms.ClearableFileInput(attrs={
-                'class': 'form-control',
-                'accept': '.pdf,.docx,.doc,.txt,.mp3,.wav,.m4a,.mp4,.mov',
-            }),
-        }
+class LectureUploadForm(forms.Form):
+    Title = forms.CharField(max_length=255, widget=forms.TextInput(attrs={'class': 'form-control'}))
+    UploadFile = forms.FileField(widget=forms.ClearableFileInput(attrs={
+        'class': 'form-control',
+        'accept': '.pdf,.docx,.doc,.txt,.mp3,.wav,.m4a,.mp4,.mov',
+    }))
 
-    def clean_FilePath(self):
-        file = self.cleaned_data.get('FilePath')
+    def clean_UploadFile(self):
+        file = self.cleaned_data.get('UploadFile')
         if file:
             import os
             ext = os.path.splitext(file.name)[1].lower()

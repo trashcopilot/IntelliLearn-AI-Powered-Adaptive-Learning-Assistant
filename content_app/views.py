@@ -7,7 +7,7 @@ from django.utils.text import slugify
 
 from ai_services.tasks import run_background
 from ai_services.t5_model import generate_questions, summarize_text
-from ai_services.text_extraction import extract_text_from_file
+from ai_services.text_extraction import extract_text_from_bytes
 from learning_app.models import Concept, Question
 
 from .forms import LectureUploadForm
@@ -16,7 +16,7 @@ from .models import LectureMaterial, Summary, SummaryValidation
 
 def _process_material_ai(material_pk, educator_pk):
     material = LectureMaterial.objects.get(pk=material_pk)
-    raw_text = extract_text_from_file(material.FilePath.path)
+    raw_text = extract_text_from_bytes(material.OriginalFileName, material.FileData)
     summary_text = summarize_text(raw_text)
     summary, _ = Summary.objects.update_or_create(
         Lecture=material,
@@ -57,9 +57,16 @@ def educator_dashboard(request):
     if request.method == 'POST':
         form = LectureUploadForm(request.POST, request.FILES)
         if form.is_valid():
-            material = form.save(commit=False)
-            material.UploadedBy = request.user
-            material.save()
+            uploaded = form.cleaned_data['UploadFile']
+            file_data = uploaded.read()
+            material = LectureMaterial.objects.create(
+                Title=form.cleaned_data['Title'],
+                OriginalFileName=uploaded.name,
+                MimeType=getattr(uploaded, 'content_type', '') or '',
+                FileSize=len(file_data),
+                FileData=file_data,
+                UploadedBy=request.user,
+            )
 
             run_background(_process_material_ai, material.pk, request.user.pk)
             messages.success(request, 'Lecture uploaded. AI processing has started in the background.')

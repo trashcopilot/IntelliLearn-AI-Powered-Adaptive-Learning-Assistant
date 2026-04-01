@@ -129,6 +129,26 @@ def extract_text_from_file(file_path: str) -> str:
     return cleaned or 'No extractable text found in the uploaded file.'
 
 
+def extract_text_from_bytes(file_name: str, file_data: bytes) -> str:
+    """Extract text from in-memory file bytes by using a temporary file."""
+    if not file_data:
+        return 'No extractable text found in the uploaded file.'
+
+    ext = os.path.splitext(file_name or '')[1].lower() or '.bin'
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
+            temp_file.write(file_data)
+            temp_path = temp_file.name
+        return extract_text_from_file(temp_path)
+    except Exception as exc:
+        logger.error('Text extraction failed for in-memory file %s: %s', file_name, exc)
+        return 'No extractable text found in the uploaded file.'
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
 def extract_text_from_pdf(file_path: str) -> str:
     """Backward compatible alias for previous function name."""
     return extract_text_from_file(file_path)

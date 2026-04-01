@@ -6,7 +6,10 @@ from django.db import models
 class LectureMaterial(models.Model):
     LectureID = models.AutoField(primary_key=True)
     Title = models.CharField(max_length=255)
-    FilePath = models.FileField(upload_to='lectures/')
+    OriginalFileName = models.CharField(max_length=255)
+    MimeType = models.CharField(max_length=100, blank=True)
+    FileSize = models.PositiveIntegerField(default=0)
+    FileData = models.BinaryField()
     UploadedBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     UploadedAt = models.DateTimeField(auto_now_add=True)
 
