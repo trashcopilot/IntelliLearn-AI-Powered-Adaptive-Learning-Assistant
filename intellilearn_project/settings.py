@@ -1,9 +1,17 @@
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-change-this-secret-key'
-DEBUG = True
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(BASE_DIR / '.env')
+except Exception:
+    pass
+
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-change-this-secret-key')
+DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() == 'true'
 ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [

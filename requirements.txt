@@ -1,7 +1,9 @@
 Django>=5.0,<6.0
+python-dotenv>=1.0.0
 pypdf>=4.0.0
 python-docx>=1.1.0
 transformers>=4.40.0
 torch>=2.2.0
+google-generativeai>=0.8.0
 SpeechRecognition>=3.10.0
 moviepy>=1.0.3
