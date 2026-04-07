@@ -19,13 +19,17 @@ def _get_model():
         return None
 
     try:
-        import google.generativeai as genai
+        from google import genai
     except Exception as exc:
-        logger.warning('google-generativeai package is unavailable: %s', exc)
+        logger.warning('google-genai package is unavailable: %s', exc)
         return None
 
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(DEFAULT_MODEL_NAME)
+    try:
+        client = genai.Client(api_key=api_key)
+        return client
+    except Exception as exc:
+        logger.warning('Gemini client initialization failed: %s', exc)
+        return None
 
 
 def _extract_nonempty_lines(text: str) -> List[str]:
@@ -43,9 +47,10 @@ def _generate_text(prompt: str) -> str:
         return ''
 
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config={
+        response = model.models.generate_content(
+            model=DEFAULT_MODEL_NAME,
+            contents=prompt,
+            config={
                 'temperature': 0.2,
                 'max_output_tokens': 800,
             },
