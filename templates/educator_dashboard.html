@@ -22,23 +22,98 @@
         <div class="card shadow-sm">
             <div class="card-body">
                 <h5>AI Generated Summaries (Verification Queue)</h5>
-                {% for summary in summaries %}
-                    <div class="border rounded p-3 mb-3">
-                        <h6>{{ summary.Lecture.Title }}</h6>
-                        <p>{{ summary.SummaryText }}</p>
-                        {% if summary.IsVerified %}
-                            <span class="badge bg-success">Verified</span>
-                            <a href="{% url 'content:download_summary' summary.pk %}" class="btn btn-sm btn-outline-secondary ms-2">Download Summary</a>
-                            <a href="{% url 'content:publish_quiz' summary.Lecture.pk %}" class="btn btn-sm btn-primary ms-2">Publish Quiz</a>
-                        {% else %}
-                            <a href="{% url 'content:verify_summary' summary.pk %}" class="btn btn-sm btn-outline-primary">Mark as Verified</a>
-                        {% endif %}
-                    </div>
-                {% empty %}
-                    <p>No summary generated yet.</p>
-                {% endfor %}
+                <div id="ai-processing-status" class="alert alert-warning py-2 px-3 mb-3" role="status" aria-live="polite" style="display: none;"></div>
+                <div id="summary-queue">
+                    {% include 'content_app/_summary_queue.html' with summaries=active_summaries %}
+                </div>
+                <hr>
+                <h6>Archived Summaries</h6>
+                <div id="archived-summary-queue">
+                    {% include 'content_app/_archived_summary_queue.html' with summaries=archived_summaries %}
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    let pendingCount = Number('{{ pending_count|default:0 }}');
+    let summaryCount = Number('{{ summary_count|default:0 }}');
+    let archivedCount = Number('{{ archived_count|default:0 }}');
+    const statusUrl = "{% url 'content:ai_processing_status' %}";
+    const statusBanner = document.getElementById('ai-processing-status');
+
+    if (Number.isNaN(pendingCount) || Number.isNaN(summaryCount) || Number.isNaN(archivedCount)) {
+        return;
+    }
+
+    const pollIntervalMs = 3000;
+
+    const renderProcessingStatus = (count) => {
+        if (!statusBanner) {
+            return;
+        }
+
+        if (count > 0) {
+            const noun = count === 1 ? 'lecture' : 'lectures';
+            statusBanner.textContent = `AI is processing ${count} ${noun}... this section updates automatically.`;
+            statusBanner.style.display = 'block';
+            return;
+        }
+
+        statusBanner.style.display = 'none';
+    };
+
+    renderProcessingStatus(pendingCount);
+
+    const pollStatus = async () => {
+        try {
+            const response = await fetch(statusUrl, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+
+            if (!response.ok) {
+                return;
+            }
+
+            const data = await response.json();
+            const nextPending = Number(data.pending_count);
+            const nextSummary = Number(data.summary_count);
+            const nextArchived = Number(data.archived_count);
+
+            if (Number.isNaN(nextPending) || Number.isNaN(nextSummary) || Number.isNaN(nextArchived)) {
+                return;
+            }
+
+            if (nextPending !== pendingCount || nextSummary !== summaryCount || nextArchived !== archivedCount) {
+                if (typeof data.summaries_html === 'string') {
+                    const queue = document.getElementById('summary-queue');
+                    if (queue) {
+                        queue.innerHTML = data.summaries_html;
+                    }
+                }
+                if (typeof data.archived_summaries_html === 'string') {
+                    const archivedQueue = document.getElementById('archived-summary-queue');
+                    if (archivedQueue) {
+                        archivedQueue.innerHTML = data.archived_summaries_html;
+                    }
+                }
+                pendingCount = nextPending;
+                summaryCount = nextSummary;
+                archivedCount = nextArchived;
+            }
+
+            renderProcessingStatus(nextPending);
+        } catch (err) {
+            // Ignore transient fetch errors and retry on next interval.
+        }
+    };
+
+    setInterval(pollStatus, pollIntervalMs);
+});
+</script>
 {% endblock %}

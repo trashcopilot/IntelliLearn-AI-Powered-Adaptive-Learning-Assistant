@@ -47,7 +47,7 @@ def _generate_text(prompt: str) -> str:
             prompt,
             generation_config={
                 'temperature': 0.2,
-                'max_output_tokens': 400,
+                'max_output_tokens': 800,
             },
         )
     except Exception as exc:
@@ -57,24 +57,58 @@ def _generate_text(prompt: str) -> str:
     return (getattr(response, 'text', '') or '').strip()
 
 
-def generate_gemini_summary(text: str, local_summary: str = '') -> str:
-    prompt = (
-        'Summarize the lecture notes in 4 to 6 concise sentences. '
-        'Keep the meaning accurate and avoid adding facts that are not present.\n\n'
-        f'Lecture notes:\n{text[:12000]}\n\n'
-        f'Local draft summary:\n{local_summary or "N/A"}'
-    )
+def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: str = 'detailed') -> str:
+    mode = (summary_mode or '').strip().lower()
+    if mode == 'brief':
+        prompt = (
+            'Create a brief study summary as exactly 3 bullet points. '
+            'Each bullet should be one concise sentence. Keep only the most central ideas and do not add new facts. '
+            'Do not add a title or extra commentary.\n\n'
+            f'Lecture notes:\n{text[:10000]}\n\n'
+            f'Local draft summary:\n{local_summary or "N/A"}'
+        )
+    elif mode == 'standard':
+        prompt = (
+            'Create a clear study summary with a short paragraph followed by a "Key Points" list of 3 to 5 bullets. '
+            'Cover main concepts and key supporting details without adding new facts. '
+            'Do not add a title or extra commentary.\n\n'
+            f'Lecture notes:\n{text[:13000]}\n\n'
+            f'Local draft summary:\n{local_summary or "N/A"}'
+        )
+    else:
+        prompt = (
+            'Create a detailed study summary with these sections exactly: Overview, Key Concepts, Important Details, and Takeaways. '
+            'Use short paragraphs or bullets under each section. Preserve factual accuracy and do not add new information. '
+            'Cover major concepts, important definitions, process steps, critical numbers/formulas, and notable limitations or caveats when present. '
+            'Do not add a title or extra commentary.\n\n'
+            f'Lecture notes:\n{text[:15000]}\n\n'
+            f'Local draft summary:\n{local_summary or "N/A"}'
+        )
+
     refined = _generate_text(prompt)
     if refined:
         return refined
 
     # Retry with a lighter prompt if full-context refinement fails.
     if local_summary:
-        retry_prompt = (
-            'Polish the summary below in 4 to 6 concise sentences. '
-            'Improve clarity and flow without adding new facts.\n\n'
-            f'Summary draft:\n{local_summary}'
-        )
+        if mode == 'brief':
+            retry_prompt = (
+                'Rewrite the summary below as exactly 3 bullet points while preserving key facts. '
+                'Keep each bullet concise and do not add a title.\n\n'
+                f'Summary draft:\n{local_summary}'
+            )
+        elif mode == 'standard':
+            retry_prompt = (
+                'Rewrite the summary below into a short paragraph followed by a "Key Points" list of 3 to 5 bullets. '
+                'Do not add new facts or a title.\n\n'
+                f'Summary draft:\n{local_summary}'
+            )
+        else:
+            retry_prompt = (
+                'Rewrite the summary below using the sections Overview, Key Concepts, Important Details, and Takeaways. '
+                'Improve clarity while preserving all key factual points and not adding new facts. Do not add a title.\n\n'
+                f'Summary draft:\n{local_summary}'
+            )
         refined = _generate_text(retry_prompt)
         if refined:
             return refined

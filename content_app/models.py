@@ -29,6 +29,8 @@ class Summary(models.Model):
         blank=True,
         related_name='verified_summaries',
     )
+    IsArchived = models.BooleanField(default=False)
+    ArchivedAt = models.DateTimeField(null=True, blank=True)
     CreatedAt = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

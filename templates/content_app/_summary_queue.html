@@ -1,0 +1,20 @@
+{% for summary in summaries %}
+    <div class="border rounded p-3 mb-3">
+        <h6>{{ summary.Lecture.Title }}</h6>
+        <p>{{ summary.SummaryText }}</p>
+        {% if summary.IsVerified %}
+            <span class="badge bg-success">Verified</span>
+            <a href="{% url 'content:download_summary' summary.pk %}" class="btn btn-sm btn-outline-secondary ms-2">Download Summary</a>
+            <a href="{% url 'content:publish_quiz' summary.Lecture.pk %}" class="btn btn-sm btn-primary ms-2">Publish Quiz</a>
+        {% else %}
+            <a href="{% url 'content:verify_summary' summary.pk %}" class="btn btn-sm btn-outline-primary">Mark as Verified</a>
+        {% endif %}
+        <a href="{% url 'content:edit_summary' summary.pk %}" class="btn btn-sm btn-outline-dark ms-2">Edit</a>
+        <form method="post" action="{% url 'content:delete_summary' summary.pk %}" class="d-inline ms-2" onsubmit="return confirm('Move this summary to archive?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-danger">Archive</button>
+        </form>
+    </div>
+{% empty %}
+    <p>No active summary generated yet.</p>
+{% endfor %}
