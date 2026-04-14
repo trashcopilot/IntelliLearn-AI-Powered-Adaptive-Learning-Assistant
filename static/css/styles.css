@@ -1,11 +1,160 @@
+/* Shared utilities and base overrides used across the app. */
+
+:root {
+    --app-surface: rgba(10, 16, 28, 0.82);
+    --app-surface-soft: rgba(16, 24, 40, 0.72);
+    --app-border: rgba(130, 180, 255, 0.18);
+    --app-text: #eaf2ff;
+    --app-muted: rgba(234, 242, 255, 0.72);
+    --app-accent: #68d7ff;
+    --app-accent-strong: #8b5cf6;
+    --app-accent-warm: #45f3b4;
+    --app-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
 body {
-    background-color: #f8fafc;
+    background:
+        radial-gradient(circle at top left, rgba(104, 215, 255, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(139, 92, 246, 0.18), transparent 24%),
+        linear-gradient(180deg, #050816 0%, #0a1020 45%, #0b1224 100%);
+    color: var(--app-text);
+    min-height: 100vh;
+}
+
+.card,
+.list-group-item,
+.table,
+.alert,
+.form-control,
+.form-select {
+    border-color: var(--app-border);
 }
 
 .card {
+    background: var(--app-surface);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: var(--app-shadow);
+    border-radius: 1.25rem;
+}
+
+.alert {
+    border-radius: 1rem;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--app-text);
+    letter-spacing: -0.02em;
+}
+
+p,
+li,
+td,
+th,
+label,
+small,
+.text-muted {
+    color: var(--app-muted) !important;
+}
+
+.btn {
+    border-radius: 999px;
+    padding-inline: 1rem;
+}
+
+.btn-primary,
+.btn-success,
+.btn-outline-primary,
+.btn-outline-secondary,
+.btn-outline-dark {
+    box-shadow: none;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--app-accent) 0%, var(--app-accent-strong) 100%);
     border: none;
 }
 
-h2 {
-    font-weight: 700;
+.btn-success {
+    background: linear-gradient(135deg, #45f3b4 0%, #18c6ff 100%);
+    border: none;
 }
+
+.btn-outline-primary,
+.btn-outline-secondary,
+.btn-outline-dark {
+    color: var(--app-text);
+    border-color: rgba(234, 242, 255, 0.25);
+}
+
+.form-control,
+.form-select {
+    background-color: rgba(10, 16, 28, 0.75);
+    color: var(--app-text);
+    border-radius: 0.9rem;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--app-accent);
+    box-shadow: 0 0 0 0.2rem rgba(104, 215, 255, 0.18);
+}
+
+.list-group-item,
+.table {
+    background-color: rgba(12, 18, 32, 0.72);
+    color: var(--app-text);
+}
+
+.table thead th {
+    color: var(--app-text);
+    border-bottom-color: rgba(234, 242, 255, 0.15);
+}
+
+.app-shell {
+    position: relative;
+}
+
+.app-shell::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 36px 36px;
+    pointer-events: none;
+    opacity: 0.35;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 92%);
+}
+
+.app-navbar {
+    background: rgba(5, 8, 22, 0.6);
+    border-bottom: 1px solid rgba(234, 242, 255, 0.08);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+}
+
+.app-brand {
+    color: var(--app-text) !important;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.app-nav-links .nav-link {
+    color: var(--app-muted) !important;
+    border-radius: 999px;
+    padding: 0.5rem 0.9rem;
+}
+
+.app-nav-links .nav-link:hover {
+    color: var(--app-text) !important;
+    background: rgba(104, 215, 255, 0.12);
+}
+
+.app-content {
+    position: relative;
+    z-index: 1;
+}
+

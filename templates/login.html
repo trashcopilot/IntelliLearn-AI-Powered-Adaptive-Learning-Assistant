@@ -1,21 +1,33 @@
 {% extends 'base.html' %}
 
+{% load static %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-5">
-        <h2 class="mb-4">Sign in</h2>
-        <form method="post" class="card card-body shadow-sm">
-            {% csrf_token %}
-            {{ form.as_p }}
-            <button type="submit" class="btn btn-primary">Login</button>
-        </form>
-        <div class="card card-body shadow-sm mt-3">
-            <p class="mb-2">New here? Create an account first:</p>
-            <div class="d-flex gap-2 flex-wrap">
-                <a href="{% url 'users:signup_student' %}" class="btn btn-outline-primary">Sign up as Student</a>
-                <a href="{% url 'users:signup_educator' %}" class="btn btn-outline-secondary">Sign up as Educator</a>
+<section class="auth-center">
+    <div class="auth-stack">
+        <div class="card auth-card glass-card">
+            <div class="card-body">
+                <h2 class="section-title neon-text">Sign In</h2>
+                <form method="post" class="auth-form mt-3">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    <button type="submit" class="btn btn-primary w-100">Login</button>
+                </form>
+            </div>
+        </div>
+        <div class="card auth-card glass-card mt-3">
+            <div class="card-body">
+                <p class="mb-2">New here? Create an account first:</p>
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="{% url 'users:signup_student' %}" class="btn btn-outline-primary">Sign up as Student</a>
+                    <a href="{% url 'users:signup_educator' %}" class="btn btn-outline-secondary">Sign up as Educator</a>
+                </div>
             </div>
         </div>
     </div>
-</div>
+</section>
 {% endblock %}

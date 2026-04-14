@@ -72,36 +72,50 @@ def _clean_extracted_text(text: str) -> str:
     """Remove formatting artifacts, placeholders, and symbols from extracted text."""
     if not text:
         return text
-    
-    # Remove placeholder text patterns
-    text = re.sub(r'You can enter a subtitle here.*?(?=\n|$)', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'click to edit.*?(?=\n|$)', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'add title.*?(?=\n|$)', '', text, flags=re.IGNORECASE)
-    
-    # Remove slide numbers and formatting symbols at line starts
-    text = re.sub(r'^\s*\d{1,3}\s*[•\-\*o]\s*', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^\s*\d{1,3}\s+', '', text, flags=re.MULTILINE)  # Just numbered lines
-    
-    # Remove standalone bullet/formatting symbols
-    text = re.sub(r'[•\-\*]\s+', ' ', text)
-    text = re.sub(r'\s+[o]\s+', ' ', text)  # 'o' as bullet point
-    text = re.sub(r'^\s*[o]\s+', '', text, flags=re.MULTILINE)
-    
-    # Remove excessive punctuation/symbols
-    text = re.sub(r'[→↓↑←↔]', '', text)
-    
-    # Collapse repeated words (like "Impact Analysis Impact Analysis")
-    text = re.sub(r'\b(\w+)\s+(?=\1\b)', '', text, flags=re.IGNORECASE)
-    
-    # Clean up whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
-    
-    # Remove leading/trailing punctuation from lines
-    lines = text.split('. ')
-    lines = [line.strip().strip('•-*o ') for line in lines if line.strip()]
-    text = '. '.join(lines)
-    
-    return text
+
+    placeholder_patterns = (
+        r'You can enter a subtitle here.*?(?=$)',
+        r'click to edit.*?(?=$)',
+        r'add title.*?(?=$)',
+    )
+
+    cleaned_lines = []
+    for raw_line in text.splitlines():
+        line = (raw_line or '').strip()
+        if not line:
+            continue
+
+        # Remove common slide placeholder lines.
+        skip_line = False
+        for pattern in placeholder_patterns:
+            if re.search(pattern, line, flags=re.IGNORECASE):
+                skip_line = True
+                break
+        if skip_line:
+            continue
+
+        line = re.sub(r'[→↓↑←↔]', '', line)
+
+        # Remove pure page numbers like "12" or "12/44".
+        if re.fullmatch(r'\d{1,3}(?:\s*/\s*\d{1,3})?', line):
+            continue
+
+        # Normalize bullet markers but keep list structure.
+        line = re.sub(r'^\s*[•\-\*o]\s*', '- ', line)
+        line = re.sub(r'^\s*(\d{1,3})[\.)]\s*', r'\1. ', line)
+
+        # Collapse duplicate neighboring words while preserving sentence structure.
+        line = re.sub(r'\b(\w+)\s+(?=\1\b)', '', line, flags=re.IGNORECASE)
+        line = re.sub(r'\s+', ' ', line).strip()
+
+        if line:
+            cleaned_lines.append(line)
+
+    if not cleaned_lines:
+        return ''
+
+    # Preserve line boundaries so downstream summarization can detect headings/lists.
+    return '\n'.join(cleaned_lines)
 
 
 def extract_text_from_file(file_path: str) -> str:

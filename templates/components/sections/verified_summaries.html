@@ -1,0 +1,10 @@
+<ul class="list-group">
+    {% for summary in verified_summaries %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span>{{ summary.Lecture.Title }}</span>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'content:download_summary' summary.pk %}">Download Summary</a>
+        </li>
+    {% empty %}
+        <li class="list-group-item">No verified summaries available yet.</li>
+    {% endfor %}
+</ul>

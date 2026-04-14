@@ -4,8 +4,10 @@ from .views import (
     ai_processing_status,
     delete_summary,
     download_summary,
+    edit_lecture_question,
     educator_dashboard,
     edit_summary,
+    manage_lecture_questions,
     publish_quiz,
     restore_summary,
     verify_summary,
@@ -22,4 +24,6 @@ urlpatterns = [
     path('summary/<int:summary_id>/verify/', verify_summary, name='verify_summary'),
     path('summary/<int:summary_id>/download/', download_summary, name='download_summary'),
     path('lecture/<int:lecture_id>/publish-quiz/', publish_quiz, name='publish_quiz'),
+    path('lecture/<int:lecture_id>/questions/', manage_lecture_questions, name='manage_lecture_questions'),
+    path('questions/<int:question_id>/edit/', edit_lecture_question, name='edit_lecture_question'),
 ]

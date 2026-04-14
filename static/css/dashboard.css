@@ -1,0 +1,134 @@
+/* Dashboard-specific layout refinements for summary, progress, and auth screens. */
+
+.dashboard-hero {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-radius: 1.5rem;
+}
+
+.dashboard-hero h2,
+.dashboard-hero p {
+    margin-bottom: 0;
+}
+
+.dashboard-grid > [class*='col-'] {
+    margin-bottom: 1rem;
+}
+
+.summary-card,
+.progress-card,
+.auth-card,
+.queue-card {
+    border-radius: 1.25rem;
+    overflow: hidden;
+}
+
+.summary-card .card-body,
+.progress-card .card-body,
+.auth-card .card-body,
+.queue-card .card-body {
+    padding: 1.5rem;
+}
+
+.queue-item {
+    background: rgba(10, 16, 28, 0.5);
+    border: 1px solid rgba(234, 242, 255, 0.08);
+    border-radius: 1rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.queue-item p {
+    margin-bottom: 0.85rem;
+}
+
+.queue-item .btn {
+    margin-top: 0.35rem;
+}
+
+.queue-card .section-title {
+    margin-bottom: 0.8rem;
+}
+
+.queue-card .neon-divider {
+    margin-block: 1.1rem;
+}
+
+.queue-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.queue-meta .badge {
+    border-radius: 999px;
+    padding: 0.45rem 0.7rem;
+}
+
+.auth-center {
+    min-height: calc(100vh - 140px);
+    display: grid;
+    place-items: center;
+}
+
+.auth-center .card {
+    width: 100%;
+    max-width: 520px;
+}
+
+.auth-stack {
+    width: 100%;
+    max-width: 560px;
+}
+
+.auth-card .card-body {
+    padding: 1.4rem;
+}
+
+.auth-form p {
+    margin-bottom: 0.85rem;
+}
+
+.auth-form .helptext {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.85rem;
+    color: rgba(234, 242, 255, 0.65);
+}
+
+.auth-hint a {
+    color: #68d7ff;
+    text-decoration: none;
+}
+
+.auth-hint a:hover {
+    color: #8b5cf6;
+}
+
+.progress-table tbody tr:hover {
+    background-color: rgba(104, 215, 255, 0.08);
+}
+
+.quiz-panel {
+    max-width: 920px;
+}
+
+.quiz-question {
+    line-height: 1.4;
+}
+
+.quiz-answer-form textarea {
+    min-height: 120px;
+}
+
+@media (max-width: 992px) {
+    .dashboard-hero {
+        padding: 1.25rem;
+    }
+
+    .auth-stack {
+        max-width: 100%;
+    }
+}

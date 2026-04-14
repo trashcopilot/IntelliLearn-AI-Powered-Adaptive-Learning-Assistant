@@ -17,5 +17,5 @@ class SummaryAdmin(admin.ModelAdmin):
 
 @admin.register(SummaryValidation)
 class SummaryValidationAdmin(admin.ModelAdmin):
-    list_display = ('Summary', 'Lecture', 'IsVerified', 'VerifiedBy', 'CreatedAt')
-    list_filter = ('IsVerified',)
+    list_display = ('Summary', 'Lecture', 'QualityScore', 'QualityStatus', 'IsVerified', 'VerifiedBy', 'CreatedAt')
+    list_filter = ('IsVerified', 'QualityStatus')

@@ -1,0 +1,63 @@
+<form method="post" action="{% url 'learning:create_classroom' %}" class="row g-2 align-items-end mb-3">
+    {% csrf_token %}
+    <div class="col-md-6">
+        <label class="form-label" for="id_name">Class name</label>
+        {{ classroom_form.name }}
+    </div>
+    <div class="col-md-3">
+        <label class="form-label" for="id_code_length">Code length</label>
+        {{ classroom_form.code_length }}
+    </div>
+    <div class="col-md-3">
+        <button type="submit" class="btn btn-primary w-100">Create Class</button>
+    </div>
+</form>
+
+{% if managed_classrooms %}
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Class</th>
+                    <th>Join Code</th>
+                    <th>Status</th>
+                    <th>Students</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for classroom in managed_classrooms %}
+                    <tr>
+                        <td>{{ classroom.Name }}</td>
+                        <td><code>{{ classroom.JoinCode }}</code></td>
+                        <td>
+                            {% if classroom.IsActive %}
+                                <span class="badge text-bg-success">Active</span>
+                            {% else %}
+                                <span class="badge text-bg-secondary">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ classroom.ActiveStudentCount }}</td>
+                        <td class="text-end">
+                            <div class="d-inline-flex gap-1">
+                                <form method="post" action="{% url 'learning:regenerate_classroom_code' classroom.ClassroomID %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-primary btn-sm">Regenerate Code</button>
+                                </form>
+                                <form method="post" action="{% url 'learning:set_classroom_status' classroom.ClassroomID %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="is_active" value="{% if classroom.IsActive %}0{% else %}1{% endif %}">
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm">
+                                        {% if classroom.IsActive %}Deactivate{% else %}Activate{% endif %}
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <p class="mb-0 text-muted">No classes yet. Create your first class to generate a student join code.</p>
+{% endif %}

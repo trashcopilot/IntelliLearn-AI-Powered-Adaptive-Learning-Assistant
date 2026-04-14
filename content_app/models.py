@@ -49,6 +49,9 @@ class SummaryValidation(models.Model):
     Lecture = models.ForeignKey(LectureMaterial, on_delete=models.CASCADE, related_name='summary_validations')
     SummaryTextSnapshot = models.TextField()
     IsVerified = models.BooleanField(default=False)
+    QualityScore = models.DecimalField(max_digits=5, decimal_places=1, default=0)
+    QualityStatus = models.CharField(max_length=16, default='low')
+    QualityMetrics = models.JSONField(default=dict, blank=True)
     VerifiedBy = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

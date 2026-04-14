@@ -1,0 +1,22 @@
+<form method="post" action="{% url 'learning:join_classroom' %}" class="mb-3">
+    {% csrf_token %}
+    <label class="form-label" for="id_join_code">Enter class code</label>
+    {{ join_form.join_code }}
+    <button type="submit" class="btn btn-primary btn-sm mt-2">Join Class</button>
+</form>
+
+{% if enrolled_classrooms %}
+    <ul class="list-group">
+        {% for enrollment in enrolled_classrooms %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <span>
+                    <strong>{{ enrollment.Classroom.Name }}</strong><br>
+                    <small class="text-muted">Educator: {{ enrollment.Classroom.CreatedBy.username }}</small>
+                </span>
+                <span class="badge text-bg-success">Enrolled</span>
+            </li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p class="mb-0 text-muted">Join at least one class to unlock concepts and verified summaries.</p>
+{% endif %}

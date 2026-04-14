@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Concept, Question, QuestionResponse, QuizAttempt
+from .models import Classroom, ClassroomEnrollment, Concept, Question, QuestionResponse, QuizAttempt
 
 
 @admin.register(Concept)
@@ -11,8 +11,8 @@ class ConceptAdmin(admin.ModelAdmin):
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
-    list_display = ('QuestionID', 'Concept', 'Lecture', 'DifficultyLevel', 'IsPublished')
-    list_filter = ('DifficultyLevel', 'IsPublished')
+    list_display = ('QuestionID', 'QuestionType', 'Concept', 'Lecture', 'DifficultyLevel', 'IsPublished')
+    list_filter = ('QuestionType', 'DifficultyLevel', 'IsPublished')
 
 
 @admin.register(QuizAttempt)
@@ -24,3 +24,17 @@ class QuizAttemptAdmin(admin.ModelAdmin):
 class QuestionResponseAdmin(admin.ModelAdmin):
     list_display = ('ResponseID', 'Attempt', 'Question', 'IsCorrect', 'TimeTaken')
     list_filter = ('IsCorrect',)
+
+
+@admin.register(Classroom)
+class ClassroomAdmin(admin.ModelAdmin):
+    list_display = ('ClassroomID', 'Name', 'JoinCode', 'CreatedBy', 'IsActive', 'ExpiresAt', 'CreatedAt')
+    list_filter = ('IsActive',)
+    search_fields = ('Name', 'JoinCode', 'CreatedBy__username')
+
+
+@admin.register(ClassroomEnrollment)
+class ClassroomEnrollmentAdmin(admin.ModelAdmin):
+    list_display = ('EnrollmentID', 'Classroom', 'Student', 'IsActive', 'JoinedAt')
+    list_filter = ('IsActive',)
+    search_fields = ('Classroom__Name', 'Student__username')

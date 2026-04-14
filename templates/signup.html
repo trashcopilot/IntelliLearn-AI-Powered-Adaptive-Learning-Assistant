@@ -1,18 +1,28 @@
 {% extends 'base.html' %}
 
+{% load static %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6 col-lg-5">
-        <h2 class="mb-4">Sign up as {{ role_display }}</h2>
-        <form method="post" class="card card-body shadow-sm">
-            {% csrf_token %}
-            {{ form.as_p }}
-            <button type="submit" class="btn btn-primary w-100">Create account</button>
-        </form>
-        <p class="mt-3 mb-0">
-            Already have an account?
-            <a href="{% url 'users:login' %}">Sign in</a>
-        </p>
+<section class="auth-center">
+    <div class="auth-stack">
+        <div class="card auth-card glass-card">
+            <div class="card-body">
+                <h2 class="section-title neon-text">Sign Up as {{ role_display }}</h2>
+                <form method="post" class="auth-form mt-3">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    <button type="submit" class="btn btn-primary w-100">Create account</button>
+                </form>
+                <p class="mt-3 mb-0 auth-hint">
+                    Already have an account?
+                    <a href="{% url 'users:login' %}">Sign in</a>
+                </p>
+            </div>
+        </div>
     </div>
-</div>
+</section>
 {% endblock %}

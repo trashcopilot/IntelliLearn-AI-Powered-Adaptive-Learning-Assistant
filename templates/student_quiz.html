@@ -1,48 +1,22 @@
 {% extends 'base.html' %}
 
+{% load static %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
 {% block content %}
-<h2>Adaptive Quiz</h2>
+{% include 'components/page_hero.html' with title='Adaptive Quiz' subtitle='Challenge yourself, adapt difficulty, and learn with every attempt.' %}
 
 {% if completed %}
-    <div class="alert alert-success">
-        Quiz completed. Final score: <strong>{{ attempt.TotalScore }}%</strong>
-    </div>
-    <a href="{% url 'learning:student_dashboard' %}" class="btn btn-primary">Back to Dashboard</a>
+    {% include 'components/card_panel.html' with panel_class='progress-card glass-card quiz-panel' title='' body_template='components/sections/quiz_completed.html' %}
 {% elif retry_pending %}
-    <div class="alert alert-warning">
-        <h6 class="mb-2">Remedial Feedback</h6>
-        {% if micro_lesson %}
-            <p class="mb-2">{{ micro_lesson }}</p>
-        {% else %}
-            <p class="mb-2">Review the concept briefly, then retry with a similar question.</p>
-        {% endif %}
-        {% if source_question %}
-            <p class="mb-0"><strong>Previous question:</strong> {{ source_question.QuestionText }}</p>
-        {% endif %}
-    </div>
-    <form method="post" action="{% url 'learning:retry_similar_question' attempt.pk %}">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-primary">Retry With Similar Question</button>
-    </form>
+    {% include 'components/card_panel.html' with panel_class='queue-card glass-card quiz-panel' title='' body_template='components/sections/quiz_retry.html' %}
 {% else %}
-    <div class="card shadow-sm">
-        <div class="card-body">
-            <p><strong>Difficulty:</strong> {{ current_difficulty }}</p>
-            <h5>{{ question.QuestionText }}</h5>
-            <form method="post" action="{% url 'learning:submit_answer' attempt.pk %}">
-                {% csrf_token %}
-                <input type="hidden" name="question_id" value="{{ question.pk }}">
-                <input type="hidden" name="time_taken" value="0" id="timeTakenInput">
-                <textarea class="form-control mb-3" name="answer" rows="3" placeholder="Type your answer..."></textarea>
-                <button type="submit" class="btn btn-success">Submit</button>
-            </form>
-        </div>
-    </div>
+    {% include 'components/card_panel.html' with panel_class='queue-card glass-card quiz-panel' title='' body_template='components/sections/quiz_question.html' %}
     {% if micro_lesson %}
-        <div class="alert alert-warning mt-3">
-            <h6>Micro-Lesson</h6>
-            <p class="mb-0">{{ micro_lesson }}</p>
-        </div>
+        {% include 'components/card_panel.html' with panel_class='progress-card glass-card quiz-panel mt-3' title='' body_template='components/sections/quiz_micro_lesson.html' %}
     {% endif %}
 {% endif %}
 {% endblock %}

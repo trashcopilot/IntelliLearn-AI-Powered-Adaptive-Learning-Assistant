@@ -1,4 +1,5 @@
 from django import forms
+from learning_app.models import Question
 
 ALLOWED_EXTENSIONS = ('.pdf', '.docx', '.doc', '.txt', '.mp3', '.wav', '.m4a', '.mp4', '.mov')
 
@@ -39,3 +40,19 @@ class SummaryEditForm(forms.Form):
         widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 12}),
         help_text='Edit the summary to correct misinformation or add missing details.',
     )
+
+
+class QuestionEditForm(forms.ModelForm):
+    class Meta:
+        model = Question
+        fields = ['QuestionText', 'QuestionType', 'DifficultyLevel', 'CorrectAnswerText', 'IsPublished']
+        widgets = {
+            'QuestionText': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'QuestionType': forms.Select(attrs={'class': 'form-select'}),
+            'DifficultyLevel': forms.Select(
+                attrs={'class': 'form-select'},
+                choices=[('Easy', 'Easy'), ('Medium', 'Medium'), ('Hard', 'Hard')],
+            ),
+            'CorrectAnswerText': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+            'IsPublished': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }

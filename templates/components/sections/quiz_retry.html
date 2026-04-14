@@ -1,0 +1,15 @@
+<div class="alert alert-warning">
+    <h6 class="mb-2">Remedial Feedback</h6>
+    {% if micro_lesson %}
+        <p class="mb-2">{{ micro_lesson }}</p>
+    {% else %}
+        <p class="mb-2">Review the concept briefly, then retry with a similar question.</p>
+    {% endif %}
+    {% if source_question %}
+        <p class="mb-0"><strong>Previous question:</strong> {{ source_question.QuestionText }}</p>
+    {% endif %}
+</div>
+<form method="post" action="{% url 'learning:retry_similar_question' attempt.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary">Retry With Similar Question</button>
+</form>

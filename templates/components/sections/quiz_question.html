@@ -1,0 +1,11 @@
+<div class="queue-meta mb-3">
+    <span class="badge bg-info text-dark">Difficulty: {{ current_difficulty }}</span>
+</div>
+<h5 class="quiz-question mb-3">{{ question.QuestionText }}</h5>
+<form method="post" action="{% url 'learning:submit_answer' attempt.pk %}" class="quiz-answer-form">
+    {% csrf_token %}
+    <input type="hidden" name="question_id" value="{{ question.pk }}">
+    <input type="hidden" name="time_taken" value="0" id="timeTakenInput">
+    <textarea class="form-control mb-3" name="answer" rows="3" placeholder="Type your answer..."></textarea>
+    <button type="submit" class="btn btn-success">Submit</button>
+</form>

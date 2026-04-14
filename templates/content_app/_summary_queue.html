@@ -1,11 +1,28 @@
 {% for summary in summaries %}
-    <div class="border rounded p-3 mb-3">
+    <div class="queue-item">
         <h6>{{ summary.Lecture.Title }}</h6>
+        {% if summary.validation %}
+            <div class="queue-meta">
+                <span class="badge {% if summary.validation.QualityStatus == 'high' %}bg-success{% elif summary.validation.QualityStatus == 'medium' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                    Quality {{ summary.validation.QualityScore }}%
+                </span>
+                <small class="text-muted ms-2">{{ summary.validation.QualityStatus|title }} confidence</small>
+            </div>
+        {% endif %}
         <p>{{ summary.SummaryText }}</p>
         {% if summary.IsVerified %}
             <span class="badge bg-success">Verified</span>
             <a href="{% url 'content:download_summary' summary.pk %}" class="btn btn-sm btn-outline-secondary ms-2">Download Summary</a>
-            <a href="{% url 'content:publish_quiz' summary.Lecture.pk %}" class="btn btn-sm btn-primary ms-2">Publish Quiz</a>
+            <a href="{% url 'content:manage_lecture_questions' summary.Lecture.pk %}" class="btn btn-sm btn-outline-info ms-2">Manage Questions</a>
+            <form method="post" action="{% url 'content:publish_quiz' summary.Lecture.pk %}" class="d-inline ms-2">
+                {% csrf_token %}
+                <select name="publish_mode" class="form-select form-select-sm d-inline-block" style="width: 220px; vertical-align: middle;">
+                    <option value="mcq">MCQ</option>
+                    <option value="constructed">Constructed-response</option>
+                    <option value="both" selected>Both</option>
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary ms-1">Publish Quiz</button>
+            </form>
         {% else %}
             <a href="{% url 'content:verify_summary' summary.pk %}" class="btn btn-sm btn-outline-primary">Mark as Verified</a>
         {% endif %}
@@ -16,5 +33,5 @@
         </form>
     </div>
 {% empty %}
-    <p>No active summary generated yet.</p>
+    <p class="text-muted mb-0">No active summary generated yet.</p>
 {% endfor %}

@@ -1,0 +1,8 @@
+<div class="card {{ panel_class|default:'glass-card' }}">
+    <div class="card-body">
+        {% if title %}
+            <h5 class="section-title">{{ title }}</h5>
+        {% endif %}
+        {% include body_template %}
+    </div>
+</div>
