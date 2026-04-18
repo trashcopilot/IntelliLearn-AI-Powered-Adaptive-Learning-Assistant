@@ -1,3 +1,5 @@
+{% load summary_filters %}
+
 {% for summary in summaries %}
     <div class="queue-item">
         <h6>{{ summary.Lecture.Title }}</h6>
@@ -9,28 +11,45 @@
                 <small class="text-muted ms-2">{{ summary.validation.QualityStatus|title }} confidence</small>
             </div>
         {% endif %}
-        <p>{{ summary.SummaryText }}</p>
+        <div class="summary-preview">{{ summary.SummaryText|clean_summary_preview|truncatechars:700|linebreaksbr }}</div>
         {% if summary.IsVerified %}
-            <span class="badge bg-success">Verified</span>
-            <a href="{% url 'content:download_summary' summary.pk %}" class="btn btn-sm btn-outline-secondary ms-2">Download Summary</a>
-            <a href="{% url 'content:manage_lecture_questions' summary.Lecture.pk %}" class="btn btn-sm btn-outline-info ms-2">Manage Questions</a>
-            <form method="post" action="{% url 'content:publish_quiz' summary.Lecture.pk %}" class="d-inline ms-2">
-                {% csrf_token %}
-                <select name="publish_mode" class="form-select form-select-sm d-inline-block" style="width: 220px; vertical-align: middle;">
-                    <option value="mcq">MCQ</option>
-                    <option value="constructed">Constructed-response</option>
-                    <option value="both" selected>Both</option>
-                </select>
-                <button type="submit" class="btn btn-sm btn-primary ms-1">Publish Quiz</button>
-            </form>
+            <div class="summary-actions">
+                <div class="summary-actions-row summary-actions-row-primary">
+                    <span class="badge bg-success summary-status-badge">Verified</span>
+                    <a href="{% url 'content:download_summary' summary.pk %}" class="btn btn-sm btn-outline-secondary summary-action-btn">Download Summary</a>
+                    <a href="{% url 'content:manage_lecture_questions' summary.Lecture.pk %}" class="btn btn-sm btn-outline-info summary-action-btn">Manage Questions</a>
+                    <form method="post" action="{% url 'content:publish_quiz' summary.Lecture.pk %}" class="summary-publish-form">
+                        {% csrf_token %}
+                        <select name="publish_mode" class="form-select form-select-sm summary-publish-select">
+                            <option value="mcq">MCQ</option>
+                            <option value="constructed">Constructed-response</option>
+                            <option value="both" selected>Both</option>
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-primary summary-action-btn">Publish Quiz</button>
+                    </form>
+                </div>
+                <div class="summary-actions-row summary-actions-row-secondary">
+                    <a href="{% url 'content:edit_summary' summary.pk %}" class="btn btn-sm btn-outline-dark summary-action-btn">Edit</a>
+                    <form method="post" action="{% url 'content:delete_summary' summary.pk %}" class="summary-delete-form" onsubmit="return confirm('Move this summary to archive?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger summary-action-btn">Archive</button>
+                    </form>
+                </div>
+            </div>
         {% else %}
-            <a href="{% url 'content:verify_summary' summary.pk %}" class="btn btn-sm btn-outline-primary">Mark as Verified</a>
+            <div class="summary-actions">
+                <div class="summary-actions-row summary-actions-row-primary">
+                    <a href="{% url 'content:verify_summary' summary.pk %}" class="btn btn-sm btn-outline-primary summary-action-btn">Mark as Verified</a>
+                </div>
+                <div class="summary-actions-row summary-actions-row-secondary">
+                    <a href="{% url 'content:edit_summary' summary.pk %}" class="btn btn-sm btn-outline-dark summary-action-btn">Edit</a>
+                    <form method="post" action="{% url 'content:delete_summary' summary.pk %}" class="summary-delete-form" onsubmit="return confirm('Move this summary to archive?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger summary-action-btn">Archive</button>
+                    </form>
+                </div>
+            </div>
         {% endif %}
-        <a href="{% url 'content:edit_summary' summary.pk %}" class="btn btn-sm btn-outline-dark ms-2">Edit</a>
-        <form method="post" action="{% url 'content:delete_summary' summary.pk %}" class="d-inline ms-2" onsubmit="return confirm('Move this summary to archive?');">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-sm btn-outline-danger">Archive</button>
-        </form>
     </div>
 {% empty %}
     <p class="text-muted mb-0">No active summary generated yet.</p>

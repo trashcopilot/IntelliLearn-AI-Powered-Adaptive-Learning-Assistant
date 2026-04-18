@@ -10,14 +10,21 @@
     <link rel="stylesheet" href="{% static 'css/theme-futuristic.css' %}">
     {% block extra_css %}{% endblock %}
 </head>
-<body class="app-shell">
-<nav class="navbar navbar-expand-lg app-navbar">
+<body class="app-shell" style="height: 100vh; display: flex; flex-direction: column;">
+<nav class="navbar navbar-expand-lg app-navbar" style="flex-shrink: 0;">
     <div class="container">
         <a class="navbar-brand app-brand" href="#">IntelliLearn</a>
         <div class="collapse navbar-collapse show">
             <ul class="navbar-nav ms-auto app-nav-links">
                 {% if user.is_authenticated %}
-                    <li class="nav-item"><a class="nav-link" href="{% url 'users:dashboard' %}">Dashboard</a></li>
+                    {% if user.is_student %}
+                        <li class="nav-item"><a class="nav-link" href="{% url 'learning:student_classrooms' %}">Classroom</a></li>
+                    {% elif user.is_educator %}
+                        <li class="nav-item"><a class="nav-link" href="{% url 'content:educator_classrooms' %}">Classroom</a></li>
+                    {% endif %}
+                    {% if request.resolver_match.view_name != 'learning:student_classrooms' and request.resolver_match.view_name != 'content:educator_classrooms' %}
+                        <li class="nav-item"><a class="nav-link" href="{% url 'users:dashboard' %}">Dashboard</a></li>
+                    {% endif %}
                     <li class="nav-item"><a class="nav-link" href="{% url 'users:logout' %}">Logout</a></li>
                 {% endif %}
             </ul>
@@ -25,7 +32,7 @@
     </div>
 </nav>
 
-<main class="container app-content py-4">
+<main class="container app-content" style="flex: 1; display: flex; flex-direction: column; padding: 1rem; overflow: hidden;">
     {% if messages %}
         {% for message in messages %}
             <div class="alert alert-info">{{ message }}</div>

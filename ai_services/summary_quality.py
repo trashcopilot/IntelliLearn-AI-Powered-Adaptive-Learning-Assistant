@@ -13,6 +13,24 @@ def _normalize_text(text: str) -> str:
     return normalized
 
 
+def _count_words(text: str) -> int:
+    return len(re.findall(r"[A-Za-z0-9']+", text or ''))
+
+
+def _count_headings(lines) -> int:
+    return len([line for line in lines if not line.startswith(('-', '*')) and len(line.split()) <= 8])
+
+
+def _range_score(value: float, low: float, high: float) -> float:
+    if low <= value <= high:
+        return 1.0
+    if value < low:
+        gap = low - value
+        return max(0.0, 1 - (gap / max(low, 1)))
+    gap = value - high
+    return max(0.0, 1 - (gap / max(high, 1)))
+
+
 def evaluate_summary_quality(summary_text: str, source_text: str, mode: str = 'detailed') -> Dict[str, object]:
     """Return a lightweight quality score and metrics for a generated summary."""
     summary = (summary_text or '').strip()
@@ -23,12 +41,7 @@ def evaluate_summary_quality(summary_text: str, source_text: str, mode: str = 'd
     lines = _safe_lines(summary)
     bullet_lines = [line for line in lines if line.startswith(('-', '*'))]
     unique_bullets = {line[1:].strip().lower() for line in bullet_lines if len(line) > 2}
-
-    lowered_summary = summary.lower()
-    brief_sections = ['executive abstract', 'thematic clusters', 'technical anchors']
-    standard_sections = ['core context', 'key findings', 'next steps/implications']
-    detailed_sections = brief_sections + standard_sections
-    present_sections = [section for section in detailed_sections if section in lowered_summary]
+    heading_count = _count_headings(lines)
 
     summary_words = normalized_summary.split()
     source_words = set(normalized_source.split())
@@ -43,31 +56,57 @@ def evaluate_summary_quality(summary_text: str, source_text: str, mode: str = 'd
         redundancy_ratio = 0.0
 
     mode_key = (mode or 'detailed').lower()
-    structure_score = 0.0
-    if mode_key == 'brief':
-        has_sections = all(section in lowered_summary for section in brief_sections)
-        in_range = 3 <= len(bullet_lines) <= 6
-        structure_score = 1.0 if has_sections and in_range else 0.5
-    elif mode_key == 'standard':
-        has_sections = all(section in lowered_summary for section in standard_sections)
-        in_range = 4 <= len(bullet_lines) <= 10
-        structure_score = 1.0 if has_sections and in_range else 0.5
-    else:
-        structure_score = 1.0 if len(present_sections) == len(detailed_sections) and len(bullet_lines) >= 8 else 0.55
+    word_count = _count_words(summary)
 
-    density_words = len(summary_words)
-    if density_words < 40:
-        conciseness_score = 0.6
-    elif density_words <= 320:
-        conciseness_score = 1.0
+    mode_targets = {
+        'brief': {
+            'word_low': 80,
+            'word_high': 190,
+            'bullet_low': 3,
+            'bullet_high': 6,
+            'heading_low': 2,
+            'heading_high': 4,
+        },
+        'standard': {
+            'word_low': 200,
+            'word_high': 360,
+            'bullet_low': 8,
+            'bullet_high': 14,
+            'heading_low': 3,
+            'heading_high': 5,
+        },
+        'detailed': {
+            'word_low': 340,
+            'word_high': 620,
+            'bullet_low': 14,
+            'bullet_high': 26,
+            'heading_low': 5,
+            'heading_high': 8,
+        },
+    }
+    target = mode_targets.get(mode_key, mode_targets['standard'])
+
+    word_fit = _range_score(word_count, target['word_low'], target['word_high'])
+    bullet_fit = _range_score(len(bullet_lines), target['bullet_low'], target['bullet_high'])
+    heading_fit = _range_score(heading_count, target['heading_low'], target['heading_high'])
+    structure_score = (word_fit * 0.45) + (bullet_fit * 0.4) + (heading_fit * 0.15)
+
+    # Conciseness is mode-aware so brief is not over-penalized for being short.
+    conciseness_score = word_fit
+
+    source_vocab = {token for token in normalized_source.split() if len(token) > 3}
+    summary_vocab = {token for token in normalized_summary.split() if len(token) > 3}
+    if source_vocab:
+        coverage_ratio = len(source_vocab & summary_vocab) / len(source_vocab)
     else:
-        conciseness_score = max(0.55, 1 - ((density_words - 320) / 500))
+        coverage_ratio = 0.0
 
     score = (
-        structure_score * 0.4
-        + grounded_ratio * 0.35
+        structure_score * 0.35
+        + grounded_ratio * 0.3
         + conciseness_score * 0.15
         + (1 - redundancy_ratio) * 0.1
+        + min(1.0, coverage_ratio * 4.0) * 0.1
     )
     score = round(max(0.0, min(1.0, score)) * 100, 1)
 
@@ -86,7 +125,9 @@ def evaluate_summary_quality(summary_text: str, source_text: str, mode: str = 'd
             'grounding': round(grounded_ratio * 100, 1),
             'conciseness': round(conciseness_score * 100, 1),
             'non_redundancy': round((1 - redundancy_ratio) * 100, 1),
+            'coverage': round(min(1.0, coverage_ratio * 4.0) * 100, 1),
+            'word_count': word_count,
             'bullet_count': len(bullet_lines),
-            'sections_present': present_sections,
+            'heading_count': heading_count,
         },
     }

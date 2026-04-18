@@ -1,15 +1,21 @@
-<canvas id="progressChart" height="120"></canvas>
-<table class="table mt-3 progress-table">
-    <thead><tr><th>Concept</th><th>Score</th><th>Date</th></tr></thead>
-    <tbody>
-    {% for item in attempt_data %}
-        <tr>
-            <td>{{ item.concept_name }}</td>
-            <td>{{ item.attempt.TotalScore }}%</td>
-            <td>{{ item.attempt.StartTime|date:'Y-m-d H:i' }}</td>
-        </tr>
-    {% empty %}
-        <tr><td colspan="3">No attempts yet.</td></tr>
-    {% endfor %}
-    </tbody>
-</table>
+<div style="display: flex; flex-direction: column; height: 100%; min-height: 0;">
+    <div style="flex: 0 0 45%; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; padding: 0.5rem 0;">
+        <canvas id="progressChart" height="120"></canvas>
+    </div>
+    <div style="flex: 1; min-height: 0; overflow-y: auto;">
+        <table class="table table-sm progress-table mb-0">
+            <thead><tr><th>Concept</th><th>Score</th><th>Date</th></tr></thead>
+            <tbody>
+            {% for item in attempt_data %}
+                <tr>
+                    <td>{{ item.concept_name }}</td>
+                    <td>{{ item.attempt.TotalScore }}%</td>
+                    <td>{{ item.attempt.StartTime|date:'Y-m-d H:i' }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="3">No attempts yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>

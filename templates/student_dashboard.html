@@ -3,29 +3,40 @@
 {% load static %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260418c">
 {% endblock %}
 
 {% block content %}
 {% include 'components/page_hero.html' with title='Student Dashboard' subtitle='Track your progress and continue adaptive learning.' %}
 
-<div class="row g-4 dashboard-grid">
-    <div class="col-lg-5">
-        {% include 'components/card_panel.html' with panel_class='progress-card glass-card' title='Join a Class' body_template='components/sections/student_classrooms.html' %}
+{% if selected_enrollment %}
+<div class="alert alert-info d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <strong>Selected classroom:</strong> {{ selected_enrollment.Classroom.Name }}
+        <span class="text-muted ms-2">Educator: {{ selected_enrollment.Classroom.CreatedBy.username }}</span>
     </div>
-    <div class="col-lg-7">
-        {% include 'components/card_panel.html' with panel_class='progress-card glass-card' title='Available Concepts' body_template='components/sections/student_concepts.html' %}
-    </div>
+    <a href="{% url 'learning:student_classrooms' %}" class="btn btn-outline-primary btn-sm">Switch Class</a>
 </div>
+{% endif %}
 
-<div class="row g-4 dashboard-grid">
-    <div class="col-12">
-        {% include 'components/card_panel.html' with panel_class='progress-card glass-card' title='Last 7 Attempts' body_template='components/sections/student_attempts.html' %}
+<div class="student-dashboard-layout" style="flex: 1; display: flex; flex-direction: column; min-height: 0; gap: 1rem;">
+    <!-- Main content area: Left sidebar + Analytics chart -->
+    <div style="flex: 1; display: flex; gap: 1rem; min-height: 0; overflow: hidden;">
+        <!-- Left column: Available Concepts -->
+        <div style="flex: 0 0 35%; min-height: 0; overflow: hidden; display: flex;">
+            <div style="flex: 1; min-height: 0; overflow: hidden; display: flex;">
+                {% include 'components/card_panel.html' with panel_class='progress-card glass-card student-concepts-scroll' title='Available Concepts' body_template='components/sections/student_concepts.html' %}
+            </div>
+        </div>
+
+        <!-- Right column: Last 7 Attempts with chart -->
+        <div style="flex: 1; min-height: 0; overflow: hidden; display: flex;">
+            {% include 'components/card_panel.html' with panel_class='progress-card glass-card student-attempts-scroll' title='Last 7 Attempts' body_template='components/sections/student_attempts.html' %}
+        </div>
     </div>
-</div>
 
-<div class="row g-4 mt-1">
-    <div class="col-12">
+    <!-- Bottom section: Verified Summaries -->
+    <div style="flex: 0 0 auto;">
         {% include 'components/card_panel.html' with panel_class='progress-card glass-card' title='Verified Summaries' body_template='components/sections/verified_summaries.html' %}
     </div>
 </div>

@@ -1,9 +1,10 @@
 /* Dashboard-specific layout refinements for summary, progress, and auth screens. */
 
 .dashboard-hero {
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
+    padding: 1rem 1.5rem;
+    margin-bottom: 1rem;
     border-radius: 1.5rem;
+    flex-shrink: 0;
 }
 
 .dashboard-hero h2,
@@ -11,8 +12,27 @@
     margin-bottom: 0;
 }
 
-.dashboard-grid > [class*='col-'] {
-    margin-bottom: 1rem;
+.dashboard-hero h2 {
+    font-size: 1.5rem;
+}
+
+.dashboard-hero p {
+    font-size: 0.9rem;
+}
+
+.dashboard-grid {
+    align-items: stretch;
+    gap: 1rem;
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+.dashboard-grid > .col-lg-5,
+.dashboard-grid > .col-lg-7 {
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .summary-card,
@@ -42,6 +62,101 @@
     margin-bottom: 0.85rem;
 }
 
+.summary-preview {
+    margin-bottom: 0.9rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: 0.8rem;
+    border: 1px solid rgba(234, 242, 255, 0.12);
+    background: rgba(10, 16, 28, 0.78);
+    color: #f2f7ff;
+    font-size: 0.95rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    line-height: 1.58;
+    max-height: 16rem;
+    overflow-y: auto;
+    overflow-x: hidden;
+    word-break: break-word;
+}
+
+/* Override global muted text rule in styles.css for readable queue previews. */
+.queue-card .summary-preview,
+.queue-card .summary-preview p,
+.queue-card .summary-preview span,
+.queue-card .summary-preview small,
+.queue-card .summary-preview li {
+    color: #f2f7ff !important;
+}
+
+.summary-preview-compact {
+    max-height: 9rem;
+    font-size: 0.92rem;
+}
+
+.summary-preview::-webkit-scrollbar {
+    width: 6px;
+}
+
+.summary-preview::-webkit-scrollbar-thumb {
+    background: rgba(104, 215, 255, 0.35);
+    border-radius: 999px;
+}
+
+.summary-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    margin-top: 0.85rem;
+}
+
+.summary-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.summary-actions-row-primary {
+    align-items: center;
+}
+
+.summary-actions-row-secondary {
+    padding-top: 0.15rem;
+}
+
+.summary-action-btn {
+    min-height: 36px;
+    padding: 0.42rem 0.95rem;
+    border-radius: 999px;
+}
+
+.summary-status-badge {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.42rem 0.8rem;
+    border-radius: 999px;
+}
+
+.summary-publish-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.summary-publish-select {
+    width: 180px;
+    min-width: 180px;
+    min-height: 36px;
+    border-radius: 999px;
+    padding-inline: 0.85rem;
+}
+
+.summary-delete-form {
+    display: inline-flex;
+}
+
 .queue-item .btn {
     margin-top: 0.35rem;
 }
@@ -52,6 +167,69 @@
 
 .queue-card .neon-divider {
     margin-block: 1.1rem;
+}
+
+.queue-card-scroll {
+    height: 100%;
+    width: 100%;
+}
+
+.queue-card-scroll .card-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.queue-scroll-body {
+    flex: 1;
+    min-height: 0;
+    max-height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.3rem;
+}
+
+.queue-scroll-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.queue-scroll-body::-webkit-scrollbar-thumb {
+    background: rgba(104, 215, 255, 0.35);
+    border-radius: 999px;
+}
+
+/* Classroom card scroll styles */
+.classroom-scroll {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.classroom-scroll .card-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    flex: 1;
+}
+
+.classroom-scroll-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.3rem;
+}
+
+.classroom-scroll-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.classroom-scroll-body::-webkit-scrollbar-thumb {
+    background: rgba(104, 215, 255, 0.35);
+    border-radius: 999px;
 }
 
 .queue-meta {
@@ -111,6 +289,79 @@
     background-color: rgba(104, 215, 255, 0.08);
 }
 
+/* Student Attempts Card Scroll */
+.student-attempts-scroll {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.student-attempts-scroll .card-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    flex: 1;
+}
+
+.student-attempts-scroll canvas {
+    max-height: 80px !important;
+}
+
+#progressChart {
+    filter: drop-shadow(0 0 15px rgba(104, 215, 255, 0.2));
+    transition: filter 0.3s ease;
+}
+
+#progressChart:hover {
+    filter: drop-shadow(0 0 20px rgba(104, 215, 255, 0.35));
+}
+
+/* Student Concepts Card Scroll */
+.student-concepts-scroll {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.student-concepts-scroll .card-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    flex: 1;
+}
+
+.student-concepts-scroll .list-group {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.join-classroom-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.join-classroom-controls #id_join_code {
+    flex: 1 1 auto;
+    min-width: 240px;
+    padding: 0.45rem 0.7rem;
+}
+
+.join-classroom-controls #id_join_code::placeholder {
+    color: rgba(234, 242, 255, 0.72);
+    opacity: 1;
+}
+
+.join-classroom-controls .btn {
+    margin-top: 0;
+    flex: 0 0 auto;
+}
+
 .quiz-panel {
     max-width: 920px;
 }
@@ -123,6 +374,18 @@
     min-height: 120px;
 }
 
+.quiz-panel .alert-warning {
+    background: rgba(255, 193, 7, 0.18);
+    border: 1px solid rgba(255, 193, 7, 0.45);
+}
+
+.quiz-panel .alert-warning,
+.quiz-panel .alert-warning h6,
+.quiz-panel .alert-warning p,
+.quiz-panel .alert-warning strong {
+    color: #fff3cd !important;
+}
+
 @media (max-width: 992px) {
     .dashboard-hero {
         padding: 1.25rem;
@@ -130,5 +393,29 @@
 
     .auth-stack {
         max-width: 100%;
+    }
+
+    .queue-card-scroll {
+        height: auto !important;
+    }
+
+    .queue-scroll-body {
+        overflow: visible;
+        padding-right: 0;
+    }
+
+    .join-classroom-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.65rem;
+    }
+
+    .join-classroom-controls #id_join_code {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .join-classroom-controls .btn {
+        align-self: flex-start;
     }
 }

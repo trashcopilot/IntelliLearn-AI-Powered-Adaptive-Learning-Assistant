@@ -8,6 +8,7 @@ class JoinClassroomForm(forms.Form):
         max_length=8,
         widget=forms.TextInput(
             attrs={
+                'class': 'form-control',
                 'placeholder': 'Enter 6-8 character code',
                 'autocomplete': 'off',
             }

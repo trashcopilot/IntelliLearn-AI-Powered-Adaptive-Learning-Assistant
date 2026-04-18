@@ -1,8 +1,10 @@
-<form method="post" action="{% url 'learning:join_classroom' %}" class="mb-3">
+<form method="post" action="{% url 'learning:join_classroom' %}" class="mb-3 join-classroom-form">
     {% csrf_token %}
-    <label class="form-label" for="id_join_code">Enter class code</label>
-    {{ join_form.join_code }}
-    <button type="submit" class="btn btn-primary btn-sm mt-2">Join Class</button>
+    <label class="form-label mb-2" for="id_join_code">Enter class code</label>
+    <div class="join-classroom-controls">
+        {{ join_form.join_code }}
+        <button type="submit" class="btn btn-primary btn-sm">Join Class</button>
+    </div>
 </form>
 
 {% if enrolled_classrooms %}
@@ -13,10 +15,27 @@
                     <strong>{{ enrollment.Classroom.Name }}</strong><br>
                     <small class="text-muted">Educator: {{ enrollment.Classroom.CreatedBy.username }}</small>
                 </span>
-                <span class="badge text-bg-success">Enrolled</span>
+                <div class="d-flex align-items-center gap-2">
+                    {% if active_classroom_id == enrollment.Classroom.ClassroomID %}
+                        <span class="badge text-bg-info">Selected class</span>
+                    {% else %}
+                        <form method="post" action="{% url 'learning:select_classroom' enrollment.Classroom.ClassroomID %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-primary">Select Class</button>
+                        </form>
+                    {% endif %}
+                    <span class="badge text-bg-success">Enrolled</span>
+                </div>
             </li>
         {% endfor %}
     </ul>
+
+    {% if active_classroom_id %}
+        <a href="{% url 'learning:student_dashboard' %}" class="btn btn-outline-secondary w-100 mt-3" role="button">Open Dashboard</a>
+    {% else %}
+        <button type="button" class="btn btn-outline-secondary w-100 mt-3" disabled aria-disabled="true">Open Dashboard</button>
+        <small class="text-muted d-block mt-2">Select or join a class to continue.</small>
+    {% endif %}
 {% else %}
     <p class="mb-0 text-muted">Join at least one class to unlock concepts and verified summaries.</p>
 {% endif %}

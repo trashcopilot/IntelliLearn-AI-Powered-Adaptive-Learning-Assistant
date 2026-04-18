@@ -11,6 +11,13 @@ class LectureMaterial(models.Model):
     FileSize = models.PositiveIntegerField(default=0)
     FileData = models.BinaryField()
     UploadedBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    Classroom = models.ForeignKey(
+        'learning_app.Classroom',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lectures',
+    )
     UploadedAt = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

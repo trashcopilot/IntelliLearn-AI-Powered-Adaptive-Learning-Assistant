@@ -3,11 +3,21 @@
 {% load static %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260419c">
 {% endblock %}
 
 {% block content %}
 {% include 'components/page_hero.html' with title='Educator Dashboard' subtitle='Upload lecture material, review AI drafts, and verify before release.' %}
+
+{% if selected_classroom %}
+<div class="alert alert-info d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <strong>Selected classroom:</strong> {{ selected_classroom.Name }}
+        <span class="text-muted ms-2">Join code: {{ selected_classroom.JoinCode }}</span>
+    </div>
+    <a href="{% url 'content:educator_classrooms' %}" class="btn btn-outline-primary btn-sm">Switch Class</a>
+</div>
+{% endif %}
 
 <div id="ai-dashboard-config"
     data-pending-count="{{ pending_count|default:0 }}"
@@ -16,24 +26,21 @@
     data-status-url="{% url 'content:ai_processing_status' %}"
     hidden></div>
 
-<div class="row g-4 dashboard-grid">
-    <div class="col-lg-5">
-        <div class="row g-4">
-            <div class="col-12">
-                {% include 'components/card_panel.html' with panel_class='summary-card glass-card' title='Upload Lecture Material' body_template='components/sections/educator_upload_form.html' %}
-            </div>
-            <div class="col-12">
-                {% include 'components/card_panel.html' with panel_class='queue-card glass-card' title='Classroom Join Codes' body_template='components/sections/educator_classrooms.html' %}
+<div class="dashboard-grid">
+    <div style="flex: 0 0 41.66%;">
+        <div class="d-flex flex-column gap-3 h-100" id="educator-left-stack">
+            <div style="flex: 1 1 auto; min-height: 0; display: flex;">
+                {% include 'components/card_panel.html' with panel_class='summary-card glass-card h-100 w-100' title='Upload Lecture Material' body_template='components/sections/educator_upload_form.html' %}
             </div>
         </div>
     </div>
 
-    <div class="col-lg-7">
-        {% include 'components/card_panel.html' with panel_class='queue-card glass-card' title='AI Generated Summaries (Verification Queue)' body_template='components/sections/educator_queue.html' %}
+    <div style="flex: 0 0 58.34%;">
+        {% include 'components/card_panel.html' with panel_class='queue-card glass-card queue-card-scroll' title='AI Generated Summaries (Verification Queue)' body_template='components/sections/educator_queue.html' %}
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/educator_dashboard.js' %}"></script>
+<script src="{% static 'js/educator_dashboard.js' %}?v=20260418a"></script>
 {% endblock %}

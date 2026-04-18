@@ -23,8 +23,8 @@ def dashboard(request):
     if request.user.is_admin():
         return redirect('/admin/')
     if request.user.is_educator():
-        return redirect('content:educator_dashboard')
-    return redirect('learning:student_dashboard')
+        return redirect('content:educator_classrooms')
+    return redirect('learning:student_classrooms')
 
 
 def logout_view(request):

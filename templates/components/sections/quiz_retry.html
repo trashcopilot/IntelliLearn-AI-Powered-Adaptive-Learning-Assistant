@@ -3,13 +3,13 @@
     {% if micro_lesson %}
         <p class="mb-2">{{ micro_lesson }}</p>
     {% else %}
-        <p class="mb-2">Review the concept briefly, then retry with a similar question.</p>
+        <p class="mb-2">Review the concept briefly, then continue to the next question.</p>
     {% endif %}
     {% if source_question %}
         <p class="mb-0"><strong>Previous question:</strong> {{ source_question.QuestionText }}</p>
     {% endif %}
 </div>
-<form method="post" action="{% url 'learning:retry_similar_question' attempt.pk %}">
+<form method="post" action="{% url 'learning:continue_to_next_question' attempt.pk %}">
     {% csrf_token %}
-    <button type="submit" class="btn btn-primary">Retry With Similar Question</button>
+    <button type="submit" class="btn btn-primary">Next Question</button>
 </form>

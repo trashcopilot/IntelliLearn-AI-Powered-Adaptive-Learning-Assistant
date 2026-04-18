@@ -1,15 +1,86 @@
 import logging
+import io
 import os
 import re
 import tempfile
 
+from functools import lru_cache
+
 logger = logging.getLogger(__name__)
+
+try:
+    import pdfplumber
+except Exception:
+    pdfplumber = None
+
+try:
+    from google import genai
+    from google.genai import types
+except Exception:
+    genai = None
+    types = None
+
+
+_PDF_TEXT_MIN_CHARS = int(os.getenv('PDF_TEXT_MIN_CHARS', '120'))
+_PDF_TEXT_MIN_WORDS = int(os.getenv('PDF_TEXT_MIN_WORDS', '20'))
+_PDF_OCR_MAX_PAGES = int(os.getenv('PDF_OCR_MAX_PAGES', '8'))
+_PDF_OCR_RENDER_DPI = int(os.getenv('PDF_OCR_RENDER_DPI', '160'))
+_PDF_OCR_MAX_OUTPUT_TOKENS = int(os.getenv('PDF_OCR_MAX_OUTPUT_TOKENS', '1500'))
+_PDF_OCR_MODEL = os.getenv('GEMINI_OCR_MODEL', os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview'))
+
+
+def _get_gemini_api_key() -> str:
+    for env_name in ('GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_API_KEY'):
+        api_key = os.getenv(env_name)
+        if api_key:
+            return api_key
+    return ''
+
+
+@lru_cache(maxsize=1)
+def _get_gemini_client():
+    api_key = _get_gemini_api_key()
+    if not api_key or genai is None:
+        return None
+
+    try:
+        return genai.Client(api_key=api_key)
+    except Exception as exc:
+        logger.warning('Gemini OCR client initialization failed: %s', exc)
+        return None
 
 
 def _extract_pdf(path: str) -> str:
-    from pypdf import PdfReader
-    reader = PdfReader(path)
-    return '\n'.join((page.extract_text() or '') for page in reader.pages)
+    if pdfplumber is None:
+        logger.warning('pdfplumber package is unavailable for PDF extraction.')
+        return ''
+
+    page_texts = {}
+    sparse_pages = []
+
+    try:
+        with pdfplumber.open(path) as pdf:
+            total_pages = len(pdf.pages)
+            for index, page in enumerate(pdf.pages, start=1):
+                raw_text = page.extract_text() or ''
+                cleaned_text = _clean_extracted_text(raw_text)
+                if _page_needs_ocr(cleaned_text):
+                    sparse_pages.append((index, page, total_pages))
+                if cleaned_text:
+                    page_texts[index] = cleaned_text
+
+        if sparse_pages:
+            ocr_page_limit = min(len(sparse_pages), _PDF_OCR_MAX_PAGES)
+            for index, page, total_pages in sparse_pages[:ocr_page_limit]:
+                ocr_text = _ocr_pdf_page_with_gemini(page, index, total_pages)
+                if ocr_text:
+                    page_texts[index] = ocr_text
+    except Exception as exc:
+        logger.error('PDF extraction failed for %s: %s', path, exc)
+        return ''
+
+    ordered_pages = [f'Page {index}\n{text}' for index, text in sorted(page_texts.items()) if text]
+    return '\n\n'.join(ordered_pages)
 
 
 def _extract_docx(path: str) -> str:
@@ -116,6 +187,68 @@ def _clean_extracted_text(text: str) -> str:
 
     # Preserve line boundaries so downstream summarization can detect headings/lists.
     return '\n'.join(cleaned_lines)
+
+
+def _page_needs_ocr(text: str) -> bool:
+    cleaned = (text or '').strip()
+    if not cleaned:
+        return True
+
+    words = cleaned.split()
+    if len(cleaned) < _PDF_TEXT_MIN_CHARS:
+        return True
+    if len(words) < _PDF_TEXT_MIN_WORDS:
+        return True
+    return False
+
+
+def _render_pdf_page_to_png(page) -> bytes:
+    try:
+        rendered = page.to_image(resolution=_PDF_OCR_RENDER_DPI)
+        image = rendered.original
+        if image is None:
+            return b''
+
+        buffer = io.BytesIO()
+        image.save(buffer, format='PNG')
+        return buffer.getvalue()
+    except Exception as exc:
+        logger.warning('PDF page rendering failed for OCR: %s', exc)
+        return b''
+
+
+def _ocr_pdf_page_with_gemini(page, page_number: int, total_pages: int) -> str:
+    client = _get_gemini_client()
+    if client is None or types is None:
+        return ''
+
+    image_bytes = _render_pdf_page_to_png(page)
+    if not image_bytes:
+        return ''
+
+    prompt = (
+        'You are reading a PDF page image. Extract the visible text faithfully in reading order. '
+        'Preserve headings, bullets, numbered lists, and table rows where possible. '
+        'Do not summarize, explain, or add commentary. Return only the text you can read.\n\n'
+        f'Page {page_number} of {total_pages}.'
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=_PDF_OCR_MODEL,
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=image_bytes, mime_type='image/png'),
+            ],
+            config={
+                'temperature': 0.0,
+                'max_output_tokens': _PDF_OCR_MAX_OUTPUT_TOKENS,
+            },
+        )
+        return _clean_extracted_text((getattr(response, 'text', '') or '').strip())
+    except Exception as exc:
+        logger.warning('Gemini OCR failed for PDF page %s/%s: %s', page_number, total_pages, exc)
+        return ''
 
 
 def extract_text_from_file(file_path: str) -> str:

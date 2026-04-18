@@ -6,9 +6,9 @@ ALLOWED_EXTENSIONS = ('.pdf', '.docx', '.doc', '.txt', '.mp3', '.wav', '.m4a', '
 
 class LectureUploadForm(forms.Form):
     SUMMARY_MODE_CHOICES = (
-        ('brief', 'Brief'),
-        ('standard', 'Standard'),
-        ('detailed', 'Detailed'),
+        ('brief', 'Brief (quick revision)'),
+        ('standard', 'Standard (balanced study notes)'),
+        ('detailed', 'Detailed (deep analytic summary)'),
     )
 
     Title = forms.CharField(max_length=255, widget=forms.TextInput(attrs={'class': 'form-control'}))
@@ -20,7 +20,7 @@ class LectureUploadForm(forms.Form):
         choices=SUMMARY_MODE_CHOICES,
         initial='detailed',
         widget=forms.Select(attrs={'class': 'form-select'}),
-        help_text='Choose how much detail the AI should include in the summary.',
+        help_text='Brief: concise exam snapshot. Standard: structured study notes. Detailed: full analytic breakdown.',
     )
 
     def clean_UploadFile(self):

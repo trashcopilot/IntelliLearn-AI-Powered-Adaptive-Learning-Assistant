@@ -12,7 +12,11 @@ from datetime import timedelta
 
 from ai_services.tasks import run_background
 from ai_services.summary_quality import evaluate_summary_quality
-from ai_services.ai_orchestrator import generate_questions, summarize_text
+from ai_services.ai_orchestrator import (
+    generate_constructed_questions,
+    generate_mcq_questions,
+    summarize_text,
+)
 from ai_services.text_extraction import extract_text_from_bytes
 from learning_app.forms import CreateClassroomForm
 from learning_app.models import Classroom, ClassroomEnrollment, Concept, Question
@@ -36,6 +40,18 @@ def _purge_expired_archived_summaries(user):
         IsArchived=True,
         ArchivedAt__lt=cutoff,
     ).delete()
+
+
+def _get_selected_educator_classroom(request):
+    classroom_id = request.session.get('educator_active_classroom_id')
+    if not classroom_id:
+        return None
+
+    return Classroom.objects.filter(
+        ClassroomID=classroom_id,
+        CreatedBy=request.user,
+        IsActive=True,
+    ).first()
 
 
 def _process_material_ai(material_pk, educator_pk, summary_mode='detailed'):
@@ -64,27 +80,9 @@ def _process_material_ai(material_pk, educator_pk, summary_mode='detailed'):
             },
         )
 
-        concept, _ = Concept.objects.get_or_create(
-            ConceptName=material.Title,
-            defaults={'Description': f'Auto-generated concept from {material.Title}'},
-        )
-
-        generated_questions = generate_questions(raw_text)[:10]
-        for generated in generated_questions:
-            Question.objects.create(
-                Lecture=material,
-                Concept=concept,
-                QuestionText=generated,
-                QuestionType=Question.TYPE_CONSTRUCTED,
-                CorrectAnswerText='To be validated by educator',
-                DifficultyLevel='Medium',
-                IsPublished=False,
-                IsAIGenerated=True,
-            )
-
         _trace_ai(
             f'✅ AI Analysis Success: material_id={material_pk}, summary_score={quality.get("score", 0)}, '
-            f'questions_created={len(generated_questions)}'
+            'questions_created=0 (deferred until publish_quiz)'
         )
     except Exception as exc:
         _trace_ai(f'❌ AI Analysis Failure: material_id={material_pk}, error={exc}')
@@ -95,6 +93,10 @@ def _process_material_ai(material_pk, educator_pk, summary_mode='detailed'):
 def educator_dashboard(request):
     if not request.user.is_educator():
         return HttpResponseForbidden('Only educators can access this page.')
+
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return redirect('content:educator_classrooms')
 
     _purge_expired_archived_summaries(request.user)
 
@@ -110,13 +112,14 @@ def educator_dashboard(request):
                 FileSize=len(file_data),
                 FileData=file_data,
                 UploadedBy=request.user,
+                Classroom=selected_classroom,
             )
 
             summary_mode = form.cleaned_data['SummaryMode']
             run_background(_process_material_ai, material.pk, request.user.pk, summary_mode)
             messages.success(
                 request,
-                f'Lecture uploaded. AI processing started in {summary_mode} mode.',
+                f'Lecture uploaded. AI summary processing started in {summary_mode} mode. Quiz questions will be generated when you publish the quiz.',
             )
             return redirect('content:educator_dashboard')
     else:
@@ -124,32 +127,23 @@ def educator_dashboard(request):
 
     active_summaries = Summary.objects.filter(
         Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
         IsArchived=False,
     ).select_related('Lecture', 'validation').order_by('-CreatedAt')
     archived_summaries = Summary.objects.filter(
         Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
         IsArchived=True,
     ).select_related('Lecture').order_by('-ArchivedAt', '-CreatedAt')
-    pending_count = LectureMaterial.objects.filter(UploadedBy=request.user, summary__isnull=True).count()
+    pending_count = LectureMaterial.objects.filter(UploadedBy=request.user, Classroom=selected_classroom, summary__isnull=True).count()
     summary_count = active_summaries.count()
     archived_count = archived_summaries.count()
-    managed_classrooms = (
-        Classroom.objects.filter(CreatedBy=request.user)
-        .annotate(
-            ActiveStudentCount=Count(
-                'enrollments',
-                filter=Q(enrollments__IsActive=True, enrollments__Student__Role__RoleName='Student'),
-            )
-        )
-        .order_by('-CreatedAt')
-    )
     return render(
         request,
         'educator_dashboard.html',
         {
             'form': form,
-            'classroom_form': CreateClassroomForm(),
-            'managed_classrooms': managed_classrooms,
+            'selected_classroom': selected_classroom,
             'active_summaries': active_summaries,
             'archived_summaries': archived_summaries,
             'pending_count': pending_count,
@@ -164,15 +158,21 @@ def ai_processing_status(request):
     if not request.user.is_educator():
         return HttpResponseForbidden('Only educators can access this endpoint.')
 
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return JsonResponse({'detail': 'No classroom selected.'}, status=403)
+
     _purge_expired_archived_summaries(request.user)
 
-    pending_count = LectureMaterial.objects.filter(UploadedBy=request.user, summary__isnull=True).count()
+    pending_count = LectureMaterial.objects.filter(UploadedBy=request.user, Classroom=selected_classroom, summary__isnull=True).count()
     active_summaries = Summary.objects.filter(
         Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
         IsArchived=False,
     ).select_related('Lecture', 'validation').order_by('-CreatedAt')
     archived_summaries = Summary.objects.filter(
         Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
         IsArchived=True,
     ).select_related('Lecture').order_by('-ArchivedAt', '-CreatedAt')
     summary_count = active_summaries.count()
@@ -203,7 +203,16 @@ def verify_summary(request, summary_id):
     if not request.user.is_educator():
         return HttpResponseForbidden('Only educators can verify summaries.')
 
-    summary = get_object_or_404(Summary, pk=summary_id)
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return redirect('content:educator_classrooms')
+
+    summary = get_object_or_404(
+        Summary,
+        pk=summary_id,
+        Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
+    )
     if summary.IsArchived:
         messages.error(request, 'Restore the summary before verifying it.')
         return redirect('content:educator_dashboard')
@@ -230,9 +239,16 @@ def edit_summary(request, summary_id):
     if not request.user.is_educator():
         return HttpResponseForbidden('Only educators can edit summaries.')
 
-    summary = get_object_or_404(Summary, pk=summary_id)
-    if summary.Lecture.UploadedBy_id != request.user.id:
-        return HttpResponseForbidden('You can only edit your own lecture summaries.')
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return redirect('content:educator_classrooms')
+
+    summary = get_object_or_404(
+        Summary,
+        pk=summary_id,
+        Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
+    )
     if summary.IsArchived:
         messages.error(request, 'Restore the summary before editing it.')
         return redirect('content:educator_dashboard')
@@ -283,9 +299,16 @@ def delete_summary(request, summary_id):
     if request.method != 'POST':
         return HttpResponseForbidden('Invalid request method.')
 
-    summary = get_object_or_404(Summary, pk=summary_id)
-    if summary.Lecture.UploadedBy_id != request.user.id:
-        return HttpResponseForbidden('You can only delete your own lecture summaries.')
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return redirect('content:educator_classrooms')
+
+    summary = get_object_or_404(
+        Summary,
+        pk=summary_id,
+        Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
+    )
 
     lecture_title = summary.Lecture.Title
     summary.IsArchived = True
@@ -296,15 +319,47 @@ def delete_summary(request, summary_id):
 
 
 @login_required
+def delete_archived_summary(request, summary_id):
+    if not request.user.is_educator():
+        return HttpResponseForbidden('Only educators can delete summaries.')
+    if request.method != 'POST':
+        return HttpResponseForbidden('Invalid request method.')
+
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return redirect('content:educator_classrooms')
+
+    summary = get_object_or_404(
+        Summary,
+        pk=summary_id,
+        IsArchived=True,
+        Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
+    )
+
+    lecture_title = summary.Lecture.Title
+    summary.delete()
+    messages.success(request, f'Summary for "{lecture_title}" was permanently deleted.')
+    return redirect('content:educator_dashboard')
+
+
+@login_required
 def restore_summary(request, summary_id):
     if not request.user.is_educator():
         return HttpResponseForbidden('Only educators can restore summaries.')
     if request.method != 'POST':
         return HttpResponseForbidden('Invalid request method.')
 
-    summary = get_object_or_404(Summary, pk=summary_id)
-    if summary.Lecture.UploadedBy_id != request.user.id:
-        return HttpResponseForbidden('You can only restore your own lecture summaries.')
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return redirect('content:educator_classrooms')
+
+    summary = get_object_or_404(
+        Summary,
+        pk=summary_id,
+        Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
+    )
 
     summary.IsArchived = False
     summary.ArchivedAt = None
@@ -320,7 +375,16 @@ def publish_quiz(request, lecture_id):
     if request.method != 'POST':
         return HttpResponseForbidden('Invalid request method.')
 
-    lecture = get_object_or_404(LectureMaterial, pk=lecture_id)
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return redirect('content:educator_classrooms')
+
+    lecture = get_object_or_404(
+        LectureMaterial,
+        pk=lecture_id,
+        UploadedBy=request.user,
+        Classroom=selected_classroom,
+    )
     if not hasattr(lecture, 'summary') or lecture.summary.IsArchived or not lecture.summary.IsVerified:
         messages.error(request, 'Verify the summary before publishing quiz questions.')
         return redirect('content:educator_dashboard')
@@ -329,6 +393,55 @@ def publish_quiz(request, lecture_id):
     if publish_mode not in PUBLISH_MODES:
         messages.error(request, 'Invalid publish mode selected.')
         return redirect('content:educator_dashboard')
+
+    concept, _ = Concept.objects.get_or_create(
+        ConceptName=lecture.Title,
+        defaults={'Description': f'Auto-generated concept from {lecture.Title}'},
+    )
+
+    target_types = {Question.TYPE_MCQ, Question.TYPE_CONSTRUCTED}
+    if publish_mode == 'mcq':
+        target_types = {Question.TYPE_MCQ}
+    elif publish_mode == 'constructed':
+        target_types = {Question.TYPE_CONSTRUCTED}
+
+    existing_types = set(
+        Question.objects.filter(Lecture=lecture, QuestionType__in=target_types)
+        .values_list('QuestionType', flat=True)
+        .distinct()
+    )
+
+    raw_text = ''
+    if existing_types != target_types:
+        raw_text = extract_text_from_bytes(lecture.OriginalFileName, lecture.FileData)
+
+    if Question.TYPE_CONSTRUCTED in target_types and Question.TYPE_CONSTRUCTED not in existing_types:
+        generated_constructed = generate_constructed_questions(raw_text, count=6)
+        for generated in generated_constructed:
+            Question.objects.create(
+                Lecture=lecture,
+                Concept=concept,
+                QuestionText=generated,
+                QuestionType=Question.TYPE_CONSTRUCTED,
+                CorrectAnswerText='To be validated by educator',
+                DifficultyLevel='Medium',
+                IsPublished=False,
+                IsAIGenerated=True,
+            )
+
+    if Question.TYPE_MCQ in target_types and Question.TYPE_MCQ not in existing_types:
+        generated_mcq = generate_mcq_questions(raw_text, count=4)
+        for mcq in generated_mcq:
+            Question.objects.create(
+                Lecture=lecture,
+                Concept=concept,
+                QuestionText=mcq['question_text'],
+                QuestionType=Question.TYPE_MCQ,
+                CorrectAnswerText=mcq['correct_answer'],
+                DifficultyLevel='Medium',
+                IsPublished=False,
+                IsAIGenerated=True,
+            )
 
     questions_qs = Question.objects.filter(Lecture=lecture)
     if publish_mode == 'mcq':
@@ -354,7 +467,16 @@ def manage_lecture_questions(request, lecture_id):
     if not request.user.is_educator():
         return HttpResponseForbidden('Only educators can manage quiz questions.')
 
-    lecture = get_object_or_404(LectureMaterial, pk=lecture_id, UploadedBy=request.user)
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return redirect('content:educator_classrooms')
+
+    lecture = get_object_or_404(
+        LectureMaterial,
+        pk=lecture_id,
+        UploadedBy=request.user,
+        Classroom=selected_classroom,
+    )
     questions = Question.objects.filter(Lecture=lecture).select_related('Concept').order_by('QuestionID')
 
     if request.method == 'POST':
@@ -386,9 +508,16 @@ def edit_lecture_question(request, question_id):
     if not request.user.is_educator():
         return HttpResponseForbidden('Only educators can edit quiz questions.')
 
-    question = get_object_or_404(Question.objects.select_related('Lecture'), pk=question_id)
-    if question.Lecture.UploadedBy_id != request.user.id:
-        return HttpResponseForbidden('You can only edit questions from your own lectures.')
+    selected_classroom = _get_selected_educator_classroom(request)
+    if selected_classroom is None:
+        return redirect('content:educator_classrooms')
+
+    question = get_object_or_404(
+        Question.objects.select_related('Lecture'),
+        pk=question_id,
+        Lecture__UploadedBy=request.user,
+        Lecture__Classroom=selected_classroom,
+    )
 
     if request.method == 'POST':
         form = QuestionEditForm(request.POST, instance=question)
@@ -419,6 +548,12 @@ def download_summary(request, summary_id):
         return HttpResponseForbidden('Archived summaries cannot be downloaded.')
     if not summary.IsVerified and not request.user.is_educator():
         return HttpResponseForbidden('Only verified summaries are available to students.')
+    if request.user.is_educator():
+        selected_classroom = _get_selected_educator_classroom(request)
+        if selected_classroom is None:
+            return redirect('content:educator_classrooms')
+        if summary.Lecture.UploadedBy_id != request.user.id or summary.Lecture.Classroom_id != selected_classroom.ClassroomID:
+            return HttpResponseForbidden('This summary is not available for your selected classroom.')
     if request.user.is_student():
         has_access = ClassroomEnrollment.objects.filter(
             Student=request.user,
@@ -433,3 +568,51 @@ def download_summary(request, summary_id):
     response = HttpResponse(summary.SummaryText, content_type='text/plain; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+
+@login_required
+def educator_classrooms(request):
+    if not request.user.is_educator():
+        return HttpResponseForbidden('Only educators can access this page.')
+
+    managed_classrooms = (
+        Classroom.objects.filter(CreatedBy=request.user)
+        .annotate(
+            ActiveStudentCount=Count(
+                'enrollments',
+                filter=Q(enrollments__IsActive=True, enrollments__Student__Role__RoleName='Student'),
+            )
+        )
+        .order_by('-CreatedAt')
+    )
+
+    active_classroom_id = request.session.get('educator_active_classroom_id')
+    if active_classroom_id and not managed_classrooms.filter(ClassroomID=active_classroom_id, IsActive=True).exists():
+        request.session.pop('educator_active_classroom_id', None)
+        active_classroom_id = None
+
+    return render(
+        request,
+        'educator_classrooms.html',
+        {
+            'classroom_form': CreateClassroomForm(),
+            'managed_classrooms': managed_classrooms,
+            'active_classroom_id': active_classroom_id,
+        },
+    )
+
+
+@login_required
+def select_educator_classroom(request, classroom_id):
+    if not request.user.is_educator():
+        return HttpResponseForbidden('Only educators can access this page.')
+    if request.method != 'POST':
+        return redirect('content:educator_classrooms')
+
+    classroom = Classroom.objects.filter(ClassroomID=classroom_id, CreatedBy=request.user, IsActive=True).first()
+    if classroom is None:
+        return HttpResponseForbidden('You can only select your own active classrooms.')
+
+    request.session['educator_active_classroom_id'] = classroom.ClassroomID
+    messages.success(request, f'Classroom "{classroom.Name}" selected.')
+    return redirect('content:educator_classrooms')

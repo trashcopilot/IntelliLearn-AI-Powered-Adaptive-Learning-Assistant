@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+
+{% load static %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260418e">
+{% endblock %}
+
+{% block content %}
+{% include 'components/page_hero.html' with title='Classroom Access' subtitle='Create or select a classroom before opening your educator dashboard.' %}
+
+<div class="d-flex justify-content-center">
+    <div style="width: min(960px, 100%);">
+        {% include 'components/card_panel.html' with panel_class='progress-card glass-card' title='Classroom Join Codes' body_template='components/sections/educator_classrooms.html' %}
+    </div>
+</div>
+{% endblock %}

@@ -11,7 +11,7 @@
 
 {% if completed %}
     {% include 'components/card_panel.html' with panel_class='progress-card glass-card quiz-panel' title='' body_template='components/sections/quiz_completed.html' %}
-{% elif retry_pending %}
+{% elif feedback_pending %}
     {% include 'components/card_panel.html' with panel_class='queue-card glass-card quiz-panel' title='' body_template='components/sections/quiz_retry.html' %}
 {% else %}
     {% include 'components/card_panel.html' with panel_class='queue-card glass-card quiz-panel' title='' body_template='components/sections/quiz_question.html' %}
