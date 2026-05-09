@@ -3,7 +3,7 @@
 {% load static %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260418c">
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}?v=20260419g">
 {% endblock %}
 
 {% block content %}
@@ -19,25 +19,20 @@
 </div>
 {% endif %}
 
-<div class="student-dashboard-layout" style="flex: 1; display: flex; flex-direction: column; min-height: 0; gap: 1rem;">
-    <!-- Main content area: Left sidebar + Analytics chart -->
-    <div style="flex: 1; display: flex; gap: 1rem; min-height: 0; overflow: hidden;">
-        <!-- Left column: Available Concepts -->
-        <div style="flex: 0 0 35%; min-height: 0; overflow: hidden; display: flex;">
-            <div style="flex: 1; min-height: 0; overflow: hidden; display: flex;">
+<div class="student-dashboard-layout">
+    <div class="student-dashboard-main">
+        <div class="student-sidebar-stack">
+            <div class="student-sidebar-block student-sidebar-concepts">
                 {% include 'components/card_panel.html' with panel_class='progress-card glass-card student-concepts-scroll' title='Available Concepts' body_template='components/sections/student_concepts.html' %}
+            </div>
+            <div class="student-sidebar-block student-sidebar-summaries">
+                {% include 'components/card_panel.html' with panel_class='progress-card glass-card student-verified-scroll' title='Verified Summaries' body_template='components/sections/verified_summaries.html' %}
             </div>
         </div>
 
-        <!-- Right column: Last 7 Attempts with chart -->
-        <div style="flex: 1; min-height: 0; overflow: hidden; display: flex;">
-            {% include 'components/card_panel.html' with panel_class='progress-card glass-card student-attempts-scroll' title='Last 7 Attempts' body_template='components/sections/student_attempts.html' %}
+        <div class="student-attempts-main">
+            {% include 'components/card_panel.html' with panel_class='progress-card glass-card student-attempts-scroll student-attempts-large' title='Last 7 Attempts' body_template='components/sections/student_attempts.html' %}
         </div>
-    </div>
-
-    <!-- Bottom section: Verified Summaries -->
-    <div style="flex: 0 0 auto;">
-        {% include 'components/card_panel.html' with panel_class='progress-card glass-card' title='Verified Summaries' body_template='components/sections/verified_summaries.html' %}
     </div>
 </div>
 {% endblock %}

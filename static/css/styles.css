@@ -111,6 +111,34 @@ small,
     border-bottom-color: rgba(234, 242, 255, 0.15);
 }
 
+.question-manager-page .question-manager-table {
+    --bs-table-bg: rgba(10, 16, 28, 0.82);
+    --bs-table-color: #eaf2ff;
+    --bs-table-border-color: rgba(130, 180, 255, 0.18);
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.03);
+    --bs-table-striped-color: #eaf2ff;
+    --bs-table-active-bg: rgba(104, 215, 255, 0.14);
+    --bs-table-active-color: #eaf2ff;
+    --bs-table-hover-bg: rgba(104, 215, 255, 0.1);
+    --bs-table-hover-color: #f7fbff;
+}
+
+.question-manager-page .question-manager-table > :not(caption) > * > * {
+    background-color: transparent !important;
+    color: #eaf2ff !important;
+    border-bottom-color: rgba(130, 180, 255, 0.16);
+}
+
+.question-manager-page .question-manager-table thead th {
+    color: #f5f9ff !important;
+    font-weight: 700;
+}
+
+.question-manager-page .question-manager-table .question-text-row td,
+.question-manager-page .question-manager-table .question-text-row small {
+    color: rgba(234, 242, 255, 0.9) !important;
+}
+
 .app-shell {
     position: relative;
 }

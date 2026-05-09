@@ -1,4 +1,40 @@
 <div class="alert alert-success mb-3">
     Quiz completed. Final score: <strong>{{ attempt.TotalScore }}%</strong>
 </div>
+
+<div class="queue-meta mb-3">
+    <span class="badge bg-primary">Total: {{ total_questions }}</span>
+    <span class="badge bg-success">Correct: {{ correct_count }}</span>
+    <span class="badge bg-danger">Wrong: {{ wrong_count }}</span>
+</div>
+
+{% if review_items %}
+    <div class="quiz-review-list mb-3">
+        {% for item in review_items %}
+            <div class="quiz-review-item {% if item.is_correct %}quiz-review-correct{% else %}quiz-review-wrong{% endif %}">
+                <div class="quiz-review-head">
+                    <span class="badge {% if item.is_correct %}bg-success{% else %}bg-danger{% endif %}">
+                        {% if item.is_correct %}Correct{% else %}Incorrect{% endif %}
+                    </span>
+                    <small class="text-muted">{{ item.question_type|title }}</small>
+                </div>
+
+                <p class="quiz-review-question mb-2">{{ item.question_text|linebreaksbr }}</p>
+
+                <div class="quiz-review-answer-block">
+                    <strong>Your answer:</strong>
+                    <p class="mb-0">{{ item.student_answer|default:'(No answer submitted)' }}</p>
+                </div>
+
+                {% if not item.is_correct %}
+                    <div class="quiz-review-answer-block mt-2">
+                        <strong>Correct answer:</strong>
+                        <p class="mb-0">{{ item.correct_answer_display }}</p>
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
 <a href="{% url 'learning:student_dashboard' %}" class="btn btn-primary">Back to Dashboard</a>

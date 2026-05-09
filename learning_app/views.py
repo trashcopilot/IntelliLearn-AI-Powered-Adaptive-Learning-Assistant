@@ -3,6 +3,8 @@ from django.contrib import messages
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from difflib import SequenceMatcher
+import re
 
 from ai_services.ai_orchestrator import generate_micro_lesson
 from content_app.models import Summary
@@ -22,6 +24,22 @@ def _next_difficulty(current_level, is_correct):
     if is_correct:
         return DIFFICULTY_ORDER[min(idx + 1, 2)]
     return DIFFICULTY_ORDER[max(idx - 1, 0)]
+
+
+def _select_next_question(concept_id, current_difficulty, selected_educator_id, answered_ids):
+    base_qs = Question.objects.filter(
+        Concept_id=concept_id,
+        IsPublished=True,
+        Lecture__UploadedBy_id=selected_educator_id,
+    ).exclude(QuestionID__in=answered_ids)
+
+    # Primary path: adaptive level first.
+    at_level = base_qs.filter(DifficultyLevel=current_difficulty).order_by('QuestionID').first()
+    if at_level is not None:
+        return at_level
+
+    # Fallback: if no question exists at this level, continue with remaining published items.
+    return base_qs.order_by('QuestionID').first()
 
 
 def _normalize_mcq_answer(answer: str) -> str:
@@ -46,10 +64,67 @@ def _mcq_correct_by_option_text(question_text: str, submitted: str, correct_key:
     return False
 
 
+def _mcq_answer_display(question_text: str, answer_key: str) -> str:
+    key = _normalize_mcq_answer(answer_key)
+    if key not in {'A', 'B', 'C', 'D'}:
+        return (answer_key or '').strip()
+
+    lines = [line.strip() for line in (question_text or '').splitlines() if line.strip()]
+    for line in lines:
+        upper = line.upper()
+        if len(line) >= 3 and upper[0] == key and upper[1] == ')':
+            option_text = line[2:].strip()
+            return f'{key}) {option_text}' if option_text else key
+
+    return key
+
+
+def _normalize_constructed_text(value: str) -> str:
+    lowered = (value or '').strip().lower()
+    lowered = re.sub(r'[^a-z0-9\s]', ' ', lowered)
+    lowered = re.sub(r'\s+', ' ', lowered).strip()
+    return lowered
+
+
+def _token_set(value: str):
+    return {token for token in _normalize_constructed_text(value).split() if len(token) >= 3}
+
+
+def _is_constructed_correct(submitted_answer: str, answer_key: str) -> bool:
+    submitted = _normalize_constructed_text(submitted_answer)
+    key = _normalize_constructed_text(answer_key)
+
+    if not submitted or not key:
+        return False
+    if 'to be validated by educator' in key:
+        return False
+    if submitted == key:
+        return True
+
+    # Accept if a well-formed student answer clearly contains the model answer core phrase.
+    if len(submitted.split()) >= 7 and key in submitted:
+        return True
+
+    key_tokens = _token_set(key)
+    submitted_tokens = _token_set(submitted)
+    if key_tokens and submitted_tokens:
+        overlap = len(key_tokens & submitted_tokens)
+        coverage = overlap / len(key_tokens)
+        if overlap >= 3 and coverage >= 0.60:
+            return True
+
+    ratio = SequenceMatcher(None, submitted, key).ratio()
+    return ratio >= 0.72
+
+
 def _get_or_generate_micro_lesson(question: Question, student_answer: str) -> str:
     concept = question.Concept
     cached_lesson = (concept.micro_lesson or '').strip() if concept else ''
-    if cached_lesson:
+    has_detailed_shape = all(
+        marker in cached_lesson
+        for marker in ('Misunderstanding:', 'Concept Clarification:', 'Worked Example:', 'Next Attempt Strategy:')
+    )
+    if cached_lesson and len(cached_lesson) >= 220 and has_detailed_shape:
         _trace_ai(
             f'📚 Reusing Cached Micro-Lesson: concept_id={concept.ConceptID}, question_id={question.QuestionID}'
         )
@@ -220,35 +295,63 @@ def student_quiz(request, attempt_id):
             },
         )
 
-    question = None
-
     answered_ids = attempt.responses.values_list('Question_id', flat=True)
-    if question is None:
-        question = (
-            Question.objects.filter(
-                Concept_id=concept_id,
-                DifficultyLevel=current_difficulty,
-                IsPublished=True,
-                Lecture__UploadedBy_id=selected_educator_id,
-            )
-            .exclude(QuestionID__in=answered_ids)
-            .first()
-        )
+    question = _select_next_question(
+        concept_id=concept_id,
+        current_difficulty=current_difficulty,
+        selected_educator_id=selected_educator_id,
+        answered_ids=answered_ids,
+    )
 
     if question:
         request.session.pop(micro_lesson_key, None)
 
     if question is None:
         attempt.EndTime = timezone.now()
-        total = attempt.responses.count()
-        correct = attempt.responses.filter(IsCorrect=True).count()
+        responses = list(
+            attempt.responses.select_related('Question', 'Question__Concept').order_by('ResponseID')
+        )
+        total = len(responses)
+        correct = sum(1 for response in responses if response.IsCorrect)
         attempt.TotalScore = int((correct / total * 100) if total else 0)
         attempt.save(update_fields=['EndTime', 'TotalScore'])
+
+        review_items = []
+        for response in responses:
+            question_obj = response.Question
+            correct_answer_display = (question_obj.CorrectAnswerText or '').strip()
+            if question_obj.QuestionType == Question.TYPE_MCQ:
+                correct_answer_display = _mcq_answer_display(
+                    question_obj.QuestionText,
+                    question_obj.CorrectAnswerText,
+                )
+
+            review_items.append(
+                {
+                    'question_text': question_obj.QuestionText,
+                    'question_type': question_obj.QuestionType,
+                    'student_answer': (response.StudentAnswerText or '').strip(),
+                    'is_correct': response.IsCorrect,
+                    'correct_answer_display': correct_answer_display,
+                }
+            )
+
         _trace_ai(
             f'🏁 Quiz Completed: attempt_id={attempt.AttemptID}, total={total}, correct={correct}, '
             f'score={attempt.TotalScore}'
         )
-        return render(request, 'student_quiz.html', {'attempt': attempt, 'completed': True})
+        return render(
+            request,
+            'student_quiz.html',
+            {
+                'attempt': attempt,
+                'completed': True,
+                'review_items': review_items,
+                'total_questions': total,
+                'correct_count': correct,
+                'wrong_count': total - correct,
+            },
+        )
 
     return render(
         request,
@@ -288,7 +391,7 @@ def submit_answer(request, attempt_id):
             correct_norm,
         )
     else:
-        is_correct = submitted_answer.lower() == question.CorrectAnswerText.strip().lower()
+        is_correct = _is_constructed_correct(submitted_answer, question.CorrectAnswerText)
 
     _trace_ai(
         f'📝 Quiz Answer Submitted: attempt_id={attempt.AttemptID}, question_id={question.QuestionID}, '
