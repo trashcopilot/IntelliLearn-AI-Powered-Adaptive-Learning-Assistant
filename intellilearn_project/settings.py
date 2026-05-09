@@ -6,7 +6,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(BASE_DIR / '.env', override=True)
+    load_dotenv(BASE_DIR / '.env', override=False)
 except Exception:
     pass
 
@@ -56,15 +56,23 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'intellilearn_project.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.sqlite3'),
-        'NAME': os.getenv('DB_NAME', BASE_DIR / 'db.sqlite3'),
-        'USER': os.getenv('DB_USER', ''),
-        'PASSWORD': os.getenv('DB_PASSWORD', ''),
-        'HOST': os.getenv('DB_HOST', ''),
-        'PORT': os.getenv('DB_PORT', ''),
+db_engine = os.getenv('DB_ENGINE', 'django.db.backends.sqlite3')
+db_config = {
+    'ENGINE': db_engine,
+    'NAME': os.getenv('DB_NAME', str(BASE_DIR / 'db.sqlite3')),
+    'USER': os.getenv('DB_USER', ''),
+    'PASSWORD': os.getenv('DB_PASSWORD', ''),
+    'HOST': os.getenv('DB_HOST', ''),
+    'PORT': os.getenv('DB_PORT', ''),
+}
+
+if db_engine == 'django.db.backends.mysql':
+    db_config['OPTIONS'] = {
+        'charset': os.getenv('DB_CHARSET', 'utf8mb4'),
     }
+
+DATABASES = {
+    'default': db_config
 }
 
 AUTH_PASSWORD_VALIDATORS = [

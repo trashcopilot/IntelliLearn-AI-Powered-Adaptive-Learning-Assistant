@@ -1,5 +1,6 @@
-Django>=5.0,<5.1
+Django>=5.0,<6.0
 python-dotenv>=1.0.0
+PyMySQL>=1.1.0
 pdfplumber>=0.11.0
 pypdfium2>=4.30.0
 python-docx>=1.1.0
@@ -10,4 +11,3 @@ moviepy>=2.2.1
 transformers>=4.40.0
 torch>=2.2.0
 sentencepiece>=0.2.0
-PyMySQL>=1.1.0
