@@ -5,6 +5,7 @@ from typing import Dict, List
 
 from .ai_models import (
 	generate_gemini_constructed_questions,
+	generate_gemini_constructed_answer_keys,
 	generate_gemini_micro_lesson,
 	generate_gemini_mcq_questions,
 	generate_gemini_questions,
@@ -12,6 +13,7 @@ from .ai_models import (
 	generate_gemini_summary,
 	gemini_is_configured,
 	generate_local_constructed_questions,
+	generate_local_constructed_answer_keys,
 	generate_local_micro_lesson,
 	generate_local_mcq_questions,
 	generate_local_questions,
@@ -158,6 +160,32 @@ def generate_constructed_questions(text: str, count: int = 6) -> List[str]:
 		return local_questions[:count]
 
 	_trace_ai('⚠️ AI Constructed Question Generation local fallback exhausted')
+	return []
+
+
+def generate_constructed_answer_keys(text: str, questions: List[str]) -> List[str]:
+	if not text or not questions:
+		_trace_ai('ℹ️ AI Constructed Answer-Key Generation Skipped: missing text or questions.')
+		return []
+
+	answers = _run_gemini_primary(
+		'AI Constructed Answer-Key Generation',
+		lambda: generate_gemini_constructed_answer_keys(text, questions),
+	)
+	if answers:
+		_trace_ai(f'✅ AI Constructed Answer-Key Generation Success: Gemini produced {len(answers)} answers')
+		return answers
+
+	_trace_ai('⚠️ AI Constructed Answer-Key Generation Gemini exhausted, trying local fallback')
+	local_answers = _run_local_fallback(
+		'AI Constructed Answer-Key Generation',
+		lambda: generate_local_constructed_answer_keys(text, questions),
+	)
+	if local_answers:
+		_trace_ai(f'✅ AI Constructed Answer-Key Generation Success: local fallback produced {len(local_answers)} answers')
+		return local_answers
+
+	_trace_ai('⚠️ AI Constructed Answer-Key Generation local fallback exhausted')
 	return []
 
 

@@ -9,10 +9,12 @@ from django.template.loader import render_to_string
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
 from datetime import timedelta
+import os
 
 from ai_services.tasks import run_background
 from ai_services.summary_quality import evaluate_summary_quality
 from ai_services.ai_orchestrator import (
+    generate_constructed_answer_keys,
     generate_constructed_questions,
     generate_mcq_questions,
     summarize_text,
@@ -27,10 +29,57 @@ from .models import LectureMaterial, Summary, SummaryValidation
 
 ARCHIVE_RETENTION_DAYS = 30
 PUBLISH_MODES = {'mcq', 'constructed', 'both'}
+MIN_QUESTION_SOURCE_SUMMARY_CHARS = max(120, int(os.getenv('QUIZ_SOURCE_MIN_SUMMARY_CHARS', '240')))
+MIN_QUESTION_SOURCE_QUALITY_SCORE = max(0.0, min(100.0, float(os.getenv('QUIZ_SOURCE_MIN_QUALITY_SCORE', '60'))))
+AI_PENDING_WINDOW_MINUTES = max(5, int(os.getenv('AI_PENDING_WINDOW_MINUTES', '180')))
+AI_PROCESSING_TIMEOUT_MINUTES = max(10, int(os.getenv('AI_PROCESSING_TIMEOUT_MINUTES', '30')))
+
+QUIZ_GENERATION_TARGETS = {
+    'mcq': {Question.TYPE_MCQ: 10},
+    'constructed': {Question.TYPE_CONSTRUCTED: 10},
+    'both': {Question.TYPE_MCQ: 10, Question.TYPE_CONSTRUCTED: 10},
+}
+DIFFICULTY_MIX_PATTERN = ['Easy', 'Easy', 'Easy', 'Medium', 'Medium', 'Medium', 'Medium', 'Hard', 'Hard', 'Hard']
 
 
 def _trace_ai(message: str) -> None:
     print(message, flush=True)
+
+
+def _resolve_question_generation_source(lecture):
+    summary_text = ''
+    quality_score = 0.0
+
+    if hasattr(lecture, 'summary') and lecture.summary and not lecture.summary.IsArchived:
+        summary_text = (lecture.summary.SummaryText or '').strip()
+        validation = getattr(lecture.summary, 'validation', None)
+        if validation is not None:
+            try:
+                quality_score = float(validation.QualityScore or 0)
+            except (TypeError, ValueError):
+                quality_score = 0.0
+
+    has_summary_signal = (
+        len(summary_text) >= MIN_QUESTION_SOURCE_SUMMARY_CHARS
+        and quality_score >= MIN_QUESTION_SOURCE_QUALITY_SCORE
+    )
+    if has_summary_signal:
+        _trace_ai(
+            f'🧠 Quiz Source Selected: lecture_id={lecture.pk}, source=summary, '
+            f'chars={len(summary_text)}, quality={quality_score:.1f}'
+        )
+        return summary_text, 'summary'
+
+    material_text = extract_text_from_bytes(lecture.OriginalFileName, lecture.FileData)
+    _trace_ai(
+        f'📄 Quiz Source Selected: lecture_id={lecture.pk}, source=material, '
+        f'summary_chars={len(summary_text)}, summary_quality={quality_score:.1f}, material_chars={len(material_text)}'
+    )
+    return material_text, 'material'
+
+
+def _difficulty_for_index(index: int) -> str:
+    return DIFFICULTY_MIX_PATTERN[index % len(DIFFICULTY_MIX_PATTERN)]
 
 
 def _purge_expired_archived_summaries(user):
@@ -40,6 +89,58 @@ def _purge_expired_archived_summaries(user):
         IsArchived=True,
         ArchivedAt__lt=cutoff,
     ).delete()
+
+
+def _get_recent_pending_materials(user, classroom):
+    cutoff = timezone.now() - timedelta(minutes=AI_PENDING_WINDOW_MINUTES)
+    return LectureMaterial.objects.filter(
+        UploadedBy=user,
+        Classroom=classroom,
+        summary__isnull=True,
+        UploadedAt__gte=cutoff,
+    )
+
+
+def _persist_failed_summary(material, error_text: str) -> None:
+    failure_text = (
+        'AI processing failed for this lecture. '
+        'Please edit the summary manually or re-upload to retry generation.'
+    )
+    summary, _ = Summary.objects.update_or_create(
+        Lecture=material,
+        defaults={'SummaryText': failure_text, 'IsVerified': False},
+    )
+    SummaryValidation.objects.update_or_create(
+        Summary=summary,
+        defaults={
+            'Lecture': material,
+            'SummaryTextSnapshot': failure_text,
+            'IsVerified': False,
+            'QualityScore': 0,
+            'QualityStatus': 'failed',
+            'QualityMetrics': {'error': error_text},
+            'VerifiedBy': None,
+        },
+    )
+
+
+def _mark_stale_pending_materials_failed(user, classroom):
+    stale_cutoff = timezone.now() - timedelta(minutes=AI_PROCESSING_TIMEOUT_MINUTES)
+    stale_qs = LectureMaterial.objects.filter(
+        UploadedBy=user,
+        Classroom=classroom,
+        summary__isnull=True,
+        UploadedAt__lt=stale_cutoff,
+    )
+    stale_materials = list(stale_qs)
+    for material in stale_materials:
+        _persist_failed_summary(material, 'processing_timeout')
+
+    if stale_materials:
+        _trace_ai(
+            f'⚠️ Stale AI Jobs Reconciled: classroom_id={classroom.pk}, count={len(stale_materials)}, '
+            f'timeout_minutes={AI_PROCESSING_TIMEOUT_MINUTES}'
+        )
 
 
 def _get_selected_educator_classroom(request):
@@ -85,6 +186,12 @@ def _process_material_ai(material_pk, educator_pk, summary_mode='detailed'):
             'questions_created=0 (deferred until publish_quiz)'
         )
     except Exception as exc:
+        try:
+            material = LectureMaterial.objects.get(pk=material_pk)
+            _persist_failed_summary(material, str(exc))
+        except Exception as persistence_exc:
+            _trace_ai(f'❌ AI Failure Persistence Error: material_id={material_pk}, error={persistence_exc}')
+
         _trace_ai(f'❌ AI Analysis Failure: material_id={material_pk}, error={exc}')
         raise
 
@@ -98,6 +205,7 @@ def educator_dashboard(request):
     if selected_classroom is None:
         return redirect('content:educator_classrooms')
 
+    _mark_stale_pending_materials_failed(request.user, selected_classroom)
     _purge_expired_archived_summaries(request.user)
 
     if request.method == 'POST':
@@ -135,7 +243,7 @@ def educator_dashboard(request):
         Lecture__Classroom=selected_classroom,
         IsArchived=True,
     ).select_related('Lecture').order_by('-ArchivedAt', '-CreatedAt')
-    pending_count = LectureMaterial.objects.filter(UploadedBy=request.user, Classroom=selected_classroom, summary__isnull=True).count()
+    pending_count = _get_recent_pending_materials(request.user, selected_classroom).count()
     summary_count = active_summaries.count()
     archived_count = archived_summaries.count()
     return render(
@@ -162,9 +270,10 @@ def ai_processing_status(request):
     if selected_classroom is None:
         return JsonResponse({'detail': 'No classroom selected.'}, status=403)
 
+    _mark_stale_pending_materials_failed(request.user, selected_classroom)
     _purge_expired_archived_summaries(request.user)
 
-    pending_count = LectureMaterial.objects.filter(UploadedBy=request.user, Classroom=selected_classroom, summary__isnull=True).count()
+    pending_count = _get_recent_pending_materials(request.user, selected_classroom).count()
     active_summaries = Summary.objects.filter(
         Lecture__UploadedBy=request.user,
         Lecture__Classroom=selected_classroom,
@@ -399,38 +508,53 @@ def publish_quiz(request, lecture_id):
         defaults={'Description': f'Auto-generated concept from {lecture.Title}'},
     )
 
-    target_types = {Question.TYPE_MCQ, Question.TYPE_CONSTRUCTED}
-    if publish_mode == 'mcq':
-        target_types = {Question.TYPE_MCQ}
-    elif publish_mode == 'constructed':
-        target_types = {Question.TYPE_CONSTRUCTED}
+    targets = QUIZ_GENERATION_TARGETS[publish_mode]
+    target_types = set(targets.keys())
 
-    existing_types = set(
-        Question.objects.filter(Lecture=lecture, QuestionType__in=target_types)
-        .values_list('QuestionType', flat=True)
-        .distinct()
-    )
+    existing_counts = {
+        q_type: Question.objects.filter(Lecture=lecture, QuestionType=q_type).count()
+        for q_type in target_types
+    }
+    missing_counts = {
+        q_type: max(0, targets[q_type] - existing_counts.get(q_type, 0))
+        for q_type in target_types
+    }
 
-    raw_text = ''
-    if existing_types != target_types:
-        raw_text = extract_text_from_bytes(lecture.OriginalFileName, lecture.FileData)
+    generation_text = ''
+    generation_source = ''
+    if any(count > 0 for count in missing_counts.values()):
+        generation_text, generation_source = _resolve_question_generation_source(lecture)
 
-    if Question.TYPE_CONSTRUCTED in target_types and Question.TYPE_CONSTRUCTED not in existing_types:
-        generated_constructed = generate_constructed_questions(raw_text, count=6)
-        for generated in generated_constructed:
+    if any(count > 0 for count in missing_counts.values()) and not generation_text.strip():
+        messages.error(request, 'Unable to generate questions because no extractable source text was found.')
+        return redirect('content:educator_dashboard')
+
+    if Question.TYPE_CONSTRUCTED in target_types and missing_counts.get(Question.TYPE_CONSTRUCTED, 0) > 0:
+        required_constructed = missing_counts[Question.TYPE_CONSTRUCTED]
+        generated_constructed = generate_constructed_questions(generation_text, count=required_constructed)
+        generated_answer_keys = generate_constructed_answer_keys(generation_text, generated_constructed)
+        starting_idx = existing_counts.get(Question.TYPE_CONSTRUCTED, 0)
+        for idx, generated in enumerate(generated_constructed):
+            answer_key = (
+                generated_answer_keys[idx].strip()
+                if idx < len(generated_answer_keys) and (generated_answer_keys[idx] or '').strip()
+                else 'To be validated by educator'
+            )
             Question.objects.create(
                 Lecture=lecture,
                 Concept=concept,
                 QuestionText=generated,
                 QuestionType=Question.TYPE_CONSTRUCTED,
-                CorrectAnswerText='To be validated by educator',
-                DifficultyLevel='Medium',
+                CorrectAnswerText=answer_key,
+                DifficultyLevel=_difficulty_for_index(starting_idx + idx),
                 IsPublished=False,
                 IsAIGenerated=True,
             )
 
-    if Question.TYPE_MCQ in target_types and Question.TYPE_MCQ not in existing_types:
-        generated_mcq = generate_mcq_questions(raw_text, count=4)
+    if Question.TYPE_MCQ in target_types and missing_counts.get(Question.TYPE_MCQ, 0) > 0:
+        required_mcq = missing_counts[Question.TYPE_MCQ]
+        generated_mcq = generate_mcq_questions(generation_text, count=required_mcq)
+        starting_idx = existing_counts.get(Question.TYPE_MCQ, 0)
         for mcq in generated_mcq:
             Question.objects.create(
                 Lecture=lecture,
@@ -438,27 +562,38 @@ def publish_quiz(request, lecture_id):
                 QuestionText=mcq['question_text'],
                 QuestionType=Question.TYPE_MCQ,
                 CorrectAnswerText=mcq['correct_answer'],
-                DifficultyLevel='Medium',
+                DifficultyLevel=_difficulty_for_index(starting_idx),
                 IsPublished=False,
                 IsAIGenerated=True,
             )
+            starting_idx += 1
 
-    questions_qs = Question.objects.filter(Lecture=lecture)
-    if publish_mode == 'mcq':
-        questions_qs = questions_qs.filter(QuestionType=Question.TYPE_MCQ)
-    elif publish_mode == 'constructed':
-        questions_qs = questions_qs.filter(QuestionType=Question.TYPE_CONSTRUCTED)
+    selected_ids = []
+    selected_by_type = {}
+    for q_type, required_count in targets.items():
+        type_ids = list(
+            Question.objects.filter(Lecture=lecture, QuestionType=q_type)
+            .order_by('QuestionID')
+            .values_list('QuestionID', flat=True)[:required_count]
+        )
+        selected_by_type[q_type] = type_ids
+        selected_ids.extend(type_ids)
 
-    selected_ids = list(questions_qs.values_list('QuestionID', flat=True))
+    for q_type, type_ids in selected_by_type.items():
+        if not type_ids:
+            continue
+        Question.objects.filter(Lecture=lecture, QuestionType=q_type).exclude(QuestionID__in=type_ids).update(IsPublished=False)
+        Question.objects.filter(QuestionID__in=type_ids).update(IsPublished=True)
 
     if not selected_ids:
         mode_label = 'MCQ' if publish_mode == 'mcq' else 'constructed-response' if publish_mode == 'constructed' else 'all'
         messages.warning(request, f'No {mode_label} questions found to publish for "{lecture.Title}".')
         return redirect('content:educator_dashboard')
 
-    updated = Question.objects.filter(QuestionID__in=selected_ids).update(IsPublished=True)
+    updated = len(selected_ids)
     mode_label = 'both MCQ and constructed-response' if publish_mode == 'both' else 'MCQ' if publish_mode == 'mcq' else 'constructed-response'
-    messages.success(request, f'Published {updated} {mode_label} quiz questions for "{lecture.Title}".')
+    source_suffix = f' using {generation_source}-based generation' if generation_source else ''
+    messages.success(request, f'Published {updated} {mode_label} quiz questions for "{lecture.Title}"{source_suffix}.')
     return redirect('content:educator_dashboard')
 
 

@@ -831,6 +831,53 @@ def generate_gemini_constructed_questions(text: str, count: int = 6) -> List[str
 	return questions[:count]
 
 
+def generate_gemini_constructed_answer_keys(text: str, questions: List[str]) -> List[str]:
+	if not text or not questions:
+		return []
+
+	question_block = '\n'.join(f'{idx + 1}. {question.strip()}' for idx, question in enumerate(questions) if question.strip())
+	if not question_block:
+		return []
+
+	prompt = (
+		'You are generating concise model answers for constructed-response quiz questions.\n'
+		'For each question, provide one accurate answer in 1 to 2 sentences.\n'
+		'Return exactly one line per answer in this format:\n'
+		'A1: <answer>\n'
+		'A2: <answer>\n'
+		'No markdown, no bullets, no commentary.\n\n'
+		f'Lecture notes:\n{text[:12000]}\n\n'
+		f'Questions:\n{question_block}'
+	)
+
+	raw = _generate_text(prompt, temperature=0.2, max_output_tokens=620)
+	if not raw:
+		return []
+
+	parsed: Dict[int, str] = {}
+	current_idx = None
+	for line in raw.splitlines():
+		cleaned = line.strip()
+		if not cleaned:
+			continue
+		match = re.match(r'^A\s*(\d+)\s*:\s*(.+)$', cleaned, flags=re.IGNORECASE)
+		if match:
+			idx = int(match.group(1)) - 1
+			answer = match.group(2).strip()
+			if 0 <= idx < len(questions) and answer:
+				parsed[idx] = answer
+				current_idx = idx
+			else:
+				current_idx = None
+			continue
+
+		# Keep wrapped continuation lines for the most recent answer key.
+		if current_idx is not None and current_idx in parsed:
+			parsed[current_idx] = f'{parsed[current_idx]} {cleaned}'.strip()
+
+	return [parsed[i] for i in range(len(questions)) if i in parsed]
+
+
 def generate_gemini_mcq_questions(text: str, count: int = 6) -> List[Dict[str, str]]:
 	prompt = (
 		f'Create {count} multiple-choice questions from the lecture notes.\n'
@@ -909,18 +956,25 @@ def generate_gemini_micro_lesson(
 ) -> str:
 	concept_clause = f' for the concept "{concept_name}"' if concept_name else ''
 	prompt = (
-		'You are a supportive tutor. Create a concise micro-lesson after a wrong quiz answer.\n'
-		'Output plain text only with no markdown heading.\n'
-		'Use this structure in short sentences:\n'
-		'1) Explain what was misunderstood.\n'
-		'2) Clarify the concept with 2 to 3 short teaching sentences.\n'
-		'3) Give one practical action tip for the next attempt.\n'
-		'Keep it under 120 words and use simple language.\n\n'
+		'You are a supportive tutor. Create a detailed micro-lesson after a wrong quiz answer.\n'
+		'Output plain text only with no markdown symbols.\n'
+		'Use this structure with clear labels on separate lines:\n'
+		'Misunderstanding:\n'
+		'Concept Clarification:\n'
+		'Worked Example:\n'
+		'Next Attempt Strategy:\n'
+		'Requirements:\n'
+		'- Explain precisely what the student likely misunderstood.\n'
+		'- Provide a deeper explanation in 4 to 6 teaching sentences.\n'
+		'- Include one short concrete example connected to the question.\n'
+		'- End with 2 actionable steps for the next attempt.\n'
+		'- Keep language simple, accurate, and encouraging.\n'
+		'- Target 140 to 220 words.\n\n'
 		f'Question{concept_clause}: {question_text}\n'
 		f'Student answer: {student_answer or "(empty)"}\n'
 		f'Correct answer: {correct_answer}'
 	)
-	return _generate_text(prompt, temperature=0.2, max_output_tokens=220)
+	return _generate_text(prompt, temperature=0.2, max_output_tokens=420)
 
 
 # ===== LOCAL INSTRUCTION MODEL WRAPPER =====
@@ -1015,6 +1069,53 @@ def generate_local_constructed_questions(text: str, count: int = 6) -> List[str]
 	return _extract_nonempty_lines(raw)[:count]
 
 
+def generate_local_constructed_answer_keys(text: str, questions: List[str]) -> List[str]:
+	if not text or not questions:
+		return []
+
+	question_block = '\n'.join(f'{idx + 1}. {question.strip()}' for idx, question in enumerate(questions) if question.strip())
+	if not question_block:
+		return []
+
+	prompt = _local_instruction_prefix() + (
+		'Create concise model answers for the constructed-response questions below.\n'
+		'Each answer should be 1 to 2 sentences and based only on the notes.\n'
+		'Return exactly one line per answer using this format:\n'
+		'A1: <answer>\n'
+		'A2: <answer>\n'
+		'No extra text.\n\n'
+		f'Notes:\n{text[:12000]}\n\n'
+		f'Questions:\n{question_block}'
+	)
+
+	raw = _call_local_model(prompt, temperature=0.2, max_output_tokens=620)
+	if not raw:
+		return []
+
+	parsed: Dict[int, str] = {}
+	current_idx = None
+	for line in raw.splitlines():
+		cleaned = line.strip()
+		if not cleaned:
+			continue
+		match = re.match(r'^A\s*(\d+)\s*:\s*(.+)$', cleaned, flags=re.IGNORECASE)
+		if match:
+			idx = int(match.group(1)) - 1
+			answer = match.group(2).strip()
+			if 0 <= idx < len(questions) and answer:
+				parsed[idx] = answer
+				current_idx = idx
+			else:
+				current_idx = None
+			continue
+
+		# Keep wrapped continuation lines for the most recent answer key.
+		if current_idx is not None and current_idx in parsed:
+			parsed[current_idx] = f'{parsed[current_idx]} {cleaned}'.strip()
+
+	return [parsed[i] for i in range(len(questions)) if i in parsed]
+
+
 def generate_local_mcq_questions(text: str, count: int = 6) -> List[Dict[str, str]]:
 	if not text:
 		return []
@@ -1053,11 +1154,17 @@ def generate_local_micro_lesson(
 	concept_name: str = '',
 ) -> str:
 	prompt = _local_instruction_prefix() + (
-		'Create a concise micro-lesson for a student who answered incorrectly.\n'
-		'Use plain text only. Explain the misunderstanding, clarify the concept, and give one action tip.\n\n'
+		'Create a detailed micro-lesson for a student who answered incorrectly.\n'
+		'Use plain text only with this exact label order on separate lines:\n'
+		'Misunderstanding:\n'
+		'Concept Clarification:\n'
+		'Worked Example:\n'
+		'Next Attempt Strategy:\n'
+		'Include 4 to 6 explanation sentences and 2 action steps.\n'
+		'Target 140 to 220 words with simple educational language.\n\n'
 		f'Concept: {concept_name or "this concept"}\n'
 		f'Question: {question_text}\n'
 		f'Student answer: {student_answer or "(empty)"}\n'
 		f'Correct answer: {correct_answer}'
 	)
-	return _call_local_model(prompt, temperature=0.25, max_output_tokens=240)
+	return _call_local_model(prompt, temperature=0.25, max_output_tokens=420)
