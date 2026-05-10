@@ -1,7 +1,10 @@
+import os
+
 from django import forms
 from learning_app.models import Question
 
 ALLOWED_EXTENSIONS = ('.pdf', '.docx', '.doc', '.txt', '.mp3', '.wav', '.m4a', '.mp4', '.mov')
+MAX_UPLOAD_SIZE_MB = int(os.getenv('MAX_UPLOAD_SIZE_MB', '48'))
 
 
 class LectureUploadForm(forms.Form):
@@ -26,11 +29,15 @@ class LectureUploadForm(forms.Form):
     def clean_UploadFile(self):
         file = self.cleaned_data.get('UploadFile')
         if file:
-            import os
             ext = os.path.splitext(file.name)[1].lower()
             if ext not in ALLOWED_EXTENSIONS:
                 raise forms.ValidationError(
                     f'Unsupported file type "{ext}". Please upload a supported document, audio, or video file.'
+                )
+            max_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+            if file.size > max_bytes:
+                raise forms.ValidationError(
+                    f'File is too large. Maximum allowed size is {MAX_UPLOAD_SIZE_MB} MB.'
                 )
         return file
 
