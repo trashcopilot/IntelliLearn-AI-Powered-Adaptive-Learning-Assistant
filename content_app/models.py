@@ -9,6 +9,7 @@ class LectureMaterial(models.Model):
     OriginalFileName = models.CharField(max_length=255)
     MimeType = models.CharField(max_length=100, blank=True)
     FileSize = models.PositiveIntegerField(default=0)
+    SourceFile = models.FileField(upload_to='lecture_materials/', null=True, blank=True)
     FileData = models.BinaryField()
     UploadedBy = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     Classroom = models.ForeignKey(

@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
 from datetime import timedelta
 import os
+import tempfile
 
 from ai_services.tasks import run_background
 from ai_services.summary_quality import evaluate_summary_quality
@@ -19,7 +20,7 @@ from ai_services.ai_orchestrator import (
     generate_mcq_questions,
     summarize_text,
 )
-from ai_services.text_extraction import extract_text_from_bytes
+from ai_services.text_extraction import extract_text_from_bytes, extract_text_from_file
 from learning_app.forms import CreateClassroomForm
 from learning_app.models import Classroom, ClassroomEnrollment, Concept, Question
 
@@ -70,7 +71,7 @@ def _resolve_question_generation_source(lecture):
         )
         return summary_text, 'summary'
 
-    material_text = extract_text_from_bytes(lecture.OriginalFileName, lecture.FileData)
+    material_text = _extract_material_text(lecture)
     _trace_ai(
         f'📄 Quiz Source Selected: lecture_id={lecture.pk}, source=material, '
         f'summary_chars={len(summary_text)}, summary_quality={quality_score:.1f}, material_chars={len(material_text)}'
@@ -80,6 +81,28 @@ def _resolve_question_generation_source(lecture):
 
 def _difficulty_for_index(index: int) -> str:
     return DIFFICULTY_MIX_PATTERN[index % len(DIFFICULTY_MIX_PATTERN)]
+
+
+def _extract_material_text(material):
+    source_file = getattr(material, 'SourceFile', None)
+    if source_file and getattr(source_file, 'name', ''):
+        temp_path = None
+        try:
+            file_name = os.path.basename(source_file.name)
+            ext = os.path.splitext(file_name)[1].lower() or '.bin'
+            with source_file.storage.open(source_file.name, 'rb') as handle:
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
+                    temp_path = temp_file.name
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                        temp_file.write(chunk)
+            return extract_text_from_file(temp_path)
+        except Exception as exc:
+            _trace_ai(f'⚠️ File storage extraction failed: material_id={material.pk}, error={exc}')
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    return extract_text_from_bytes(material.OriginalFileName, material.FileData)
 
 
 def _purge_expired_archived_summaries(user):
@@ -159,7 +182,7 @@ def _process_material_ai(material_pk, educator_pk, summary_mode='detailed'):
     try:
         material = LectureMaterial.objects.get(pk=material_pk)
         _trace_ai(f'🚀 AI Analysis Started: material_id={material_pk}, title="{material.Title}", mode={summary_mode}')
-        raw_text = extract_text_from_bytes(material.OriginalFileName, material.FileData)
+        raw_text = _extract_material_text(material)
         _trace_ai(f'📄 AI Text Extracted: material_id={material_pk}, chars={len(raw_text)}')
 
         summary_text = summarize_text(raw_text, summary_mode=summary_mode)
@@ -370,7 +393,7 @@ def edit_summary(request, summary_id):
             summary.VerifiedBy = None
             summary.save(update_fields=['SummaryText', 'IsVerified', 'VerifiedBy'])
 
-            raw_text = extract_text_from_bytes(summary.Lecture.OriginalFileName, summary.Lecture.FileData)
+            raw_text = _extract_material_text(summary.Lecture)
             quality = evaluate_summary_quality(summary.SummaryText, raw_text, mode='detailed')
 
             SummaryValidation.objects.update_or_create(
