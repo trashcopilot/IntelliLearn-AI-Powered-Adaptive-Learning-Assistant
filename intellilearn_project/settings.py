@@ -69,7 +69,12 @@ db_config = {
 if db_engine == 'django.db.backends.mysql':
     db_config['OPTIONS'] = {
         'charset': os.getenv('DB_CHARSET', 'utf8mb4'),
+        'connect_timeout': 600,
+        'read_timeout': 600,
+        'write_timeout': 600,
     }
+    db_config['CONN_MAX_AGE'] = 600
+    db_config['AUTOCOMMIT'] = True
 
 DATABASES = {
     'default': db_config
