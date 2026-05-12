@@ -206,6 +206,53 @@ def _extract_nonempty_lines(text: str) -> List[str]:
 	return lines
 
 
+def _extract_question_candidates(text: str, count: int) -> List[str]:
+	if not text:
+		return []
+
+	candidates: List[str] = []
+	for raw_line in text.splitlines():
+		line = raw_line.strip()
+		line = re.sub(r'^(?:[-*]|\d+[\).:]?|q\s*\d*[:\).-]?)\s*', '', line, flags=re.IGNORECASE)
+		line = re.sub(r'^question\s*\d*[:\).-]?\s*', '', line, flags=re.IGNORECASE)
+		line = line.strip()
+		if line:
+			candidates.append(line)
+
+	if len(candidates) <= 1:
+		candidates = [chunk.strip() for chunk in re.split(r'(?<=\?)\s+|\n{2,}', text) if chunk.strip()]
+
+	question_starters = (
+		'explain', 'describe', 'compare', 'discuss', 'analyze', 'evaluate',
+		'why', 'how', 'what', 'when', 'where', 'which',
+	)
+	results: List[str] = []
+	seen = set()
+
+	for item in candidates:
+		cleaned = item.strip(' \t-')
+		if not cleaned:
+			continue
+
+		if '?' in cleaned:
+			cleaned = f"{cleaned.split('?', 1)[0].strip()}?"
+		elif cleaned.lower().startswith(question_starters):
+			cleaned = f"{cleaned.rstrip('.! ')}?"
+
+		if len(cleaned.split()) < 4:
+			continue
+
+		key = _normalize_similarity_key(cleaned)
+		if not key or key in seen:
+			continue
+		seen.add(key)
+		results.append(cleaned)
+		if len(results) >= count:
+			break
+
+	return results[:count]
+
+
 def _summarization_context(text: str, max_chars: int) -> str:
 	cleaned = (text or '').strip()
 	if len(cleaned) <= max_chars:
@@ -827,7 +874,10 @@ def generate_gemini_constructed_questions(text: str, count: int = 6) -> List[str
 		'Each question must be open-ended and require explanation, not yes/no.\n\n'
 		f'Lecture notes:\n{text[:12000]}'
 	)
-	questions = _extract_nonempty_lines(_generate_text(prompt, temperature=0.2, max_output_tokens=420))
+	raw = _generate_text(prompt, temperature=0.2, max_output_tokens=700)
+	questions = _extract_question_candidates(raw, count)
+	if len(questions) < count:
+		logger.warning('Constructed parser accepted %s/%s generated questions.', len(questions), count)
 	return questions[:count]
 
 
@@ -892,50 +942,11 @@ def generate_gemini_mcq_questions(text: str, count: int = 6) -> List[Dict[str, s
 		f'Lecture notes:\n{text[:12000]}'
 	)
 
-	raw = _generate_text(prompt, temperature=0.2, max_output_tokens=900)
-	if not raw:
-		return []
-
-	lines = [line.strip() for line in raw.splitlines() if line.strip()]
-	items: List[Dict[str, str]] = []
-	current: Dict[str, str] = {}
-
-	def _commit_current() -> None:
-		if {'stem', 'a', 'b', 'c', 'd', 'answer'} <= set(current.keys()):
-			answer_key = current['answer'].upper().strip()
-			if answer_key not in {'A', 'B', 'C', 'D'}:
-				return
-			question_text = (
-				f"{current['stem']}\n"
-				f"A) {current['a']}\n"
-				f"B) {current['b']}\n"
-				f"C) {current['c']}\n"
-				f"D) {current['d']}"
-			)
-			items.append({'question_text': question_text, 'correct_answer': answer_key})
-
-	for line in lines:
-		upper = line.upper()
-		if line.startswith('Q:'):
-			if current:
-				_commit_current()
-				current = {}
-			current['stem'] = line[2:].strip()
-		elif upper.startswith('A)'):
-			current['a'] = line[2:].strip()
-		elif upper.startswith('B)'):
-			current['b'] = line[2:].strip()
-		elif upper.startswith('C)'):
-			current['c'] = line[2:].strip()
-		elif upper.startswith('D)'):
-			current['d'] = line[2:].strip()
-		elif upper.startswith('ANSWER:'):
-			current['answer'] = line.split(':', 1)[-1].strip()[:1]
-
-	if current:
-		_commit_current()
-
-	return items[:count]
+	raw = _generate_text(prompt, temperature=0.2, max_output_tokens=1400)
+	items = _parse_mcq_response(raw, count)
+	if len(items) < count:
+		logger.warning('MCQ parser accepted %s/%s generated questions.', len(items), count)
+	return items
 
 
 def generate_gemini_retry_question(question_text: str, concept_name: str = '') -> str:
@@ -984,6 +995,12 @@ def _parse_mcq_response(raw: str, count: int) -> List[Dict[str, str]]:
 	lines = [line.strip() for line in (raw or '').splitlines() if line.strip()]
 	items: List[Dict[str, str]] = []
 	current: Dict[str, str] = {}
+	current_field = ''
+
+	question_pattern = re.compile(r'^(?:q(?:uestion)?\s*\d*\s*[:\).-]?\s*)(.+)$', flags=re.IGNORECASE)
+	numbered_question_pattern = re.compile(r'^\d+[\).]\s+(.+)$')
+	option_pattern = re.compile(r'^(?:option\s*)?([ABCD])[\)\].:\-]\s*(.+)$', flags=re.IGNORECASE)
+	answer_pattern = re.compile(r'^(?:answer|correct(?:\s*answer)?)\s*[:\-]?\s*([ABCD])\b', flags=re.IGNORECASE)
 
 	def _commit_current() -> None:
 		if {'stem', 'a', 'b', 'c', 'd', 'answer'} <= set(current.keys()):
@@ -1000,22 +1017,32 @@ def _parse_mcq_response(raw: str, count: int) -> List[Dict[str, str]]:
 			items.append({'question_text': question_text, 'correct_answer': answer_key})
 
 	for line in lines:
-		upper = line.upper()
-		if line.startswith('Q:'):
+		question_match = question_pattern.match(line)
+		numbered_match = numbered_question_pattern.match(line)
+		option_match = option_pattern.match(line)
+		answer_match = answer_pattern.match(line)
+
+		if question_match:
 			if current:
 				_commit_current()
 				current = {}
-			current['stem'] = line[2:].strip()
-		elif upper.startswith('A)'):
-			current['a'] = line[2:].strip()
-		elif upper.startswith('B)'):
-			current['b'] = line[2:].strip()
-		elif upper.startswith('C)'):
-			current['c'] = line[2:].strip()
-		elif upper.startswith('D)'):
-			current['d'] = line[2:].strip()
-		elif upper.startswith('ANSWER:'):
-			current['answer'] = line.split(':', 1)[-1].strip()[:1]
+			current['stem'] = question_match.group(1).strip()
+			current_field = 'stem'
+		elif numbered_match and '?' in numbered_match.group(1):
+			if current:
+				_commit_current()
+				current = {}
+			current['stem'] = numbered_match.group(1).strip()
+			current_field = 'stem'
+		elif option_match:
+			option_key = option_match.group(1).lower()
+			current[option_key] = option_match.group(2).strip()
+			current_field = option_key
+		elif answer_match:
+			current['answer'] = answer_match.group(1).upper()
+			current_field = 'answer'
+		elif current and current_field in {'stem', 'a', 'b', 'c', 'd'}:
+			current[current_field] = f"{current[current_field]} {line}".strip()
 
 	if current:
 		_commit_current()

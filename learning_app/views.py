@@ -42,6 +42,44 @@ def _select_next_question(concept_id, current_difficulty, selected_educator_id, 
     return base_qs.order_by('QuestionID').first()
 
 
+def _extract_mcq_options(question_text: str) -> tuple:
+    """
+    Parse MCQ options from question text.
+    Returns (question_stem, options_dict)
+    where options_dict is {'A': 'option text', 'B': 'option text', ...}
+    """
+    lines = [line.strip() for line in (question_text or '').splitlines() if line.strip()]
+    question_stem = ''
+    options = {}
+    
+    for line in lines:
+        if line.startswith('Q:'):
+            question_stem = line[2:].strip()
+        elif line.upper().startswith('A)'):
+            options['A'] = line[2:].strip()
+        elif line.upper().startswith('B)'):
+            options['B'] = line[2:].strip()
+        elif line.upper().startswith('C)'):
+            options['C'] = line[2:].strip()
+        elif line.upper().startswith('D)'):
+            options['D'] = line[2:].strip()
+        elif not question_stem and line and not any(line.startswith(x) for x in ['A)', 'B)', 'C)', 'D)', 'ANSWER:']):
+            question_stem = line
+    
+    return question_stem, options
+
+
+def _prepare_mcq_context(question):
+    """
+    Prepare MCQ question context: extract stem and options.
+    Returns dict with 'stem' and 'options'.
+    """
+    if question.QuestionType == Question.TYPE_MCQ:
+        stem, opts = _extract_mcq_options(question.QuestionText)
+        return {'stem': stem or 'Question', 'options': opts}
+    return {'stem': '', 'options': {}}
+
+
 def _normalize_mcq_answer(answer: str) -> str:
     cleaned = (answer or '').strip().upper()
     if not cleaned:
@@ -279,6 +317,7 @@ def student_quiz(request, attempt_id):
     concept_id = request.session.get(f'quiz_{attempt.AttemptID}_concept_id')
     current_difficulty = request.session.get(f'quiz_{attempt.AttemptID}_difficulty', 'Medium')
     selected_educator_id = request.session.get(f'quiz_{attempt.AttemptID}_selected_educator_id')
+    mcq_context = {'stem': '', 'options': {}}  # Initialize empty MCQ context
 
     if request.session.get(feedback_key):
         source_id = request.session.get(f'feedback_source_{attempt.AttemptID}')
@@ -305,6 +344,9 @@ def student_quiz(request, attempt_id):
 
     if question:
         request.session.pop(micro_lesson_key, None)
+        
+        # Parse MCQ context if applicable
+        mcq_context = _prepare_mcq_context(question)
 
     if question is None:
         attempt.EndTime = timezone.now()
@@ -362,6 +404,7 @@ def student_quiz(request, attempt_id):
             'current_difficulty': current_difficulty,
             'completed': False,
             'micro_lesson': micro_lesson,
+            'mcq_context': mcq_context,
         },
     )
 

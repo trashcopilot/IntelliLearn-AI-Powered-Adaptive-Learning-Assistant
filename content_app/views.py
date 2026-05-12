@@ -41,6 +41,7 @@ QUIZ_GENERATION_TARGETS = {
     'both': {Question.TYPE_MCQ: 10, Question.TYPE_CONSTRUCTED: 10},
 }
 DIFFICULTY_MIX_PATTERN = ['Easy', 'Easy', 'Easy', 'Medium', 'Medium', 'Medium', 'Medium', 'Hard', 'Hard', 'Hard']
+QUIZ_GENERATION_MAX_ATTEMPTS = max(1, int(os.getenv('QUIZ_GENERATION_MAX_ATTEMPTS', '3')))
 
 
 def _trace_ai(message: str) -> None:
@@ -553,43 +554,74 @@ def publish_quiz(request, lecture_id):
         return redirect('content:educator_dashboard')
 
     if Question.TYPE_CONSTRUCTED in target_types and missing_counts.get(Question.TYPE_CONSTRUCTED, 0) > 0:
-        required_constructed = missing_counts[Question.TYPE_CONSTRUCTED]
-        generated_constructed = generate_constructed_questions(generation_text, count=required_constructed)
-        generated_answer_keys = generate_constructed_answer_keys(generation_text, generated_constructed)
-        starting_idx = existing_counts.get(Question.TYPE_CONSTRUCTED, 0)
-        for idx, generated in enumerate(generated_constructed):
-            answer_key = (
-                generated_answer_keys[idx].strip()
-                if idx < len(generated_answer_keys) and (generated_answer_keys[idx] or '').strip()
-                else 'To be validated by educator'
-            )
-            Question.objects.create(
-                Lecture=lecture,
-                Concept=concept,
-                QuestionText=generated,
-                QuestionType=Question.TYPE_CONSTRUCTED,
-                CorrectAnswerText=answer_key,
-                DifficultyLevel=_difficulty_for_index(starting_idx + idx),
-                IsPublished=False,
-                IsAIGenerated=True,
+        target_constructed = targets[Question.TYPE_CONSTRUCTED]
+        current_constructed = existing_counts.get(Question.TYPE_CONSTRUCTED, 0)
+        for _ in range(QUIZ_GENERATION_MAX_ATTEMPTS):
+            required_constructed = max(0, target_constructed - current_constructed)
+            if required_constructed == 0:
+                break
+
+            generated_constructed = generate_constructed_questions(generation_text, count=required_constructed)
+            if not generated_constructed:
+                break
+
+            generated_answer_keys = generate_constructed_answer_keys(generation_text, generated_constructed)
+            for idx, generated in enumerate(generated_constructed):
+                answer_key = (
+                    generated_answer_keys[idx].strip()
+                    if idx < len(generated_answer_keys) and (generated_answer_keys[idx] or '').strip()
+                    else 'To be validated by educator'
+                )
+                Question.objects.create(
+                    Lecture=lecture,
+                    Concept=concept,
+                    QuestionText=generated,
+                    QuestionType=Question.TYPE_CONSTRUCTED,
+                    CorrectAnswerText=answer_key,
+                    DifficultyLevel=_difficulty_for_index(current_constructed),
+                    IsPublished=False,
+                    IsAIGenerated=True,
+                )
+                current_constructed += 1
+
+        remaining_constructed = max(0, target_constructed - current_constructed)
+        if remaining_constructed > 0:
+            _trace_ai(
+                f'⚠️ Constructed generation partial: lecture_id={lecture.pk}, '
+                f'missing={remaining_constructed}, attempts={QUIZ_GENERATION_MAX_ATTEMPTS}'
             )
 
     if Question.TYPE_MCQ in target_types and missing_counts.get(Question.TYPE_MCQ, 0) > 0:
-        required_mcq = missing_counts[Question.TYPE_MCQ]
-        generated_mcq = generate_mcq_questions(generation_text, count=required_mcq)
-        starting_idx = existing_counts.get(Question.TYPE_MCQ, 0)
-        for mcq in generated_mcq:
-            Question.objects.create(
-                Lecture=lecture,
-                Concept=concept,
-                QuestionText=mcq['question_text'],
-                QuestionType=Question.TYPE_MCQ,
-                CorrectAnswerText=mcq['correct_answer'],
-                DifficultyLevel=_difficulty_for_index(starting_idx),
-                IsPublished=False,
-                IsAIGenerated=True,
+        target_mcq = targets[Question.TYPE_MCQ]
+        current_mcq = existing_counts.get(Question.TYPE_MCQ, 0)
+        for _ in range(QUIZ_GENERATION_MAX_ATTEMPTS):
+            required_mcq = max(0, target_mcq - current_mcq)
+            if required_mcq == 0:
+                break
+
+            generated_mcq = generate_mcq_questions(generation_text, count=required_mcq)
+            if not generated_mcq:
+                break
+
+            for mcq in generated_mcq:
+                Question.objects.create(
+                    Lecture=lecture,
+                    Concept=concept,
+                    QuestionText=mcq['question_text'],
+                    QuestionType=Question.TYPE_MCQ,
+                    CorrectAnswerText=mcq['correct_answer'],
+                    DifficultyLevel=_difficulty_for_index(current_mcq),
+                    IsPublished=False,
+                    IsAIGenerated=True,
+                )
+                current_mcq += 1
+
+        remaining_mcq = max(0, target_mcq - current_mcq)
+        if remaining_mcq > 0:
+            _trace_ai(
+                f'⚠️ MCQ generation partial: lecture_id={lecture.pk}, '
+                f'missing={remaining_mcq}, attempts={QUIZ_GENERATION_MAX_ATTEMPTS}'
             )
-            starting_idx += 1
 
     selected_ids = []
     selected_by_type = {}
