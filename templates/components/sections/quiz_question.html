@@ -1,11 +1,112 @@
 <div class="queue-meta mb-3">
     <span class="badge bg-info text-dark">Difficulty: {{ current_difficulty }}</span>
 </div>
-<h5 class="quiz-question mb-3">{{ question.QuestionText }}</h5>
-<form method="post" action="{% url 'learning:submit_answer' attempt.pk %}" class="quiz-answer-form">
-    {% csrf_token %}
-    <input type="hidden" name="question_id" value="{{ question.pk }}">
-    <input type="hidden" name="time_taken" value="0" id="timeTakenInput">
-    <textarea class="form-control mb-3" name="answer" rows="3" placeholder="Type your answer..."></textarea>
-    <button type="submit" class="btn btn-success">Submit</button>
-</form>
+
+{% if question.QuestionType == 'mcq' %}
+    {# Display MCQ question stem #}
+    <h5 class="quiz-question mb-4">{{ mcq_context.stem }}</h5>
+
+    {# MCQ Options as clickable buttons #}
+    <form method="post" action="{% url 'learning:submit_answer' attempt.pk %}" class="quiz-answer-form" id="mcqForm">
+        {% csrf_token %}
+        <input type="hidden" name="question_id" value="{{ question.pk }}">
+        <input type="hidden" name="time_taken" value="0" id="timeTakenInput">
+        <input type="hidden" name="answer" id="selectedAnswer" value="">
+
+        <div class="mcq-options mb-4">
+            {% for key, text in mcq_context.options.items %}
+                <button type="button" class="btn btn-outline-primary mcq-option-btn w-100 mb-3 text-start p-3" data-option="{{ key }}">
+                    <strong class="fs-5">{{ key }}.</strong>&nbsp;&nbsp;<span>{{ text }}</span>
+                </button>
+            {% endfor %}
+        </div>
+
+        <button type="submit" class="btn btn-success btn-lg w-100" id="submitBtn" disabled>
+            <i class="bi bi-check-circle"></i> Submit Answer
+        </button>
+    </form>
+
+    <style>
+        .mcq-option-btn {
+            border: 2px solid #dee2e6;
+            transition: all 0.3s ease;
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+
+        .mcq-option-btn:hover {
+            border-color: #0d6efd;
+            background-color: rgba(13, 110, 253, 0.05);
+        }
+
+        .mcq-option-btn.active {
+            background-color: #0d6efd;
+            color: white;
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+        }
+
+        .mcq-option-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        #submitBtn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #submitBtn:not(:disabled):hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const optionButtons = document.querySelectorAll('.mcq-option-btn');
+            const selectedAnswerInput = document.getElementById('selectedAnswer');
+            const submitBtn = document.getElementById('submitBtn');
+            const mcqForm = document.getElementById('mcqForm');
+
+            optionButtons.forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    // Remove active state from all buttons
+                    optionButtons.forEach(b => {
+                        b.classList.remove('active');
+                        b.classList.add('btn-outline-primary');
+                        b.classList.remove('btn-primary');
+                    });
+                    
+                    // Add active state to clicked button
+                    this.classList.add('active');
+                    this.classList.remove('btn-outline-primary');
+                    this.classList.add('btn-primary');
+                    
+                    // Set the hidden answer field
+                    selectedAnswerInput.value = this.getAttribute('data-option');
+                    
+                    // Enable submit button
+                    submitBtn.disabled = false;
+                    
+                    // Optional: Auto-submit after short delay
+                    // setTimeout(() => mcqForm.submit(), 300);
+                });
+            });
+        });
+    </script>
+{% else %}
+    {# Constructed-response text input #}
+    <h5 class="quiz-question mb-3">{{ question.QuestionText }}</h5>
+    <form method="post" action="{% url 'learning:submit_answer' attempt.pk %}" class="quiz-answer-form">
+        {% csrf_token %}
+        <input type="hidden" name="question_id" value="{{ question.pk }}">
+        <input type="hidden" name="time_taken" value="0" id="timeTakenInput">
+        <textarea class="form-control mb-3" name="answer" rows="4" placeholder="Type your answer..." required></textarea>
+        <button type="submit" class="btn btn-success btn-lg w-100">
+            <i class="bi bi-check-circle"></i> Submit Answer
+        </button>
+    </form>
+{% endif %}

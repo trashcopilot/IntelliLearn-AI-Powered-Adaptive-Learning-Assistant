@@ -139,6 +139,37 @@ small,
     color: rgba(234, 242, 255, 0.9) !important;
 }
 
+.question-manager-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 120px);
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.25rem;
+}
+
+.question-manager-page .row {
+    min-height: 0;
+}
+
+.question-manager-page .row > [class*='col-'] > .card {
+    height: auto;
+}
+
+.question-manager-page::-webkit-scrollbar {
+    width: 8px;
+}
+
+.question-manager-page::-webkit-scrollbar-thumb {
+    background: rgba(104, 215, 255, 0.35);
+    border-radius: 999px;
+}
+
+.question-manager-page::-webkit-scrollbar-track {
+    background: rgba(104, 215, 255, 0.05);
+}
+
 .app-shell {
     position: relative;
 }

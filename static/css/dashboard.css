@@ -199,6 +199,37 @@
     border-radius: 999px;
 }
 
+/* Quiz Panel Scrolling */
+.quiz-panel {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    max-height: calc(100vh - 280px);
+    overflow: hidden;
+}
+
+.quiz-panel .card-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: calc(100vh - 320px);
+}
+
+.quiz-panel .card-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.quiz-panel .card-body::-webkit-scrollbar-thumb {
+    background: rgba(104, 215, 255, 0.35);
+    border-radius: 999px;
+}
+
+.quiz-panel .card-body::-webkit-scrollbar-track {
+    background: rgba(104, 215, 255, 0.05);
+}
+
 /* Classroom card scroll styles */
 .classroom-scroll {
     height: 100%;
