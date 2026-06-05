@@ -17,6 +17,11 @@ ALLOWED_HOSTS = os.getenv(
     'intellilearn-ai-powered-adaptive-learning-assist-production.up.railway.app,localhost,127.0.0.1'
 ).split(',')
 
+CSRF_TRUSTED_ORIGINS = os.getenv(
+    'CSRF_TRUSTED_ORIGINS',
+    'https://intellilearn-ai-powered-adaptive-learning-assist-production.up.railway.app'
+).split(',')
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
