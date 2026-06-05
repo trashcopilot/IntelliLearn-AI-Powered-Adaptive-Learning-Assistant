@@ -160,7 +160,7 @@ def _get_or_generate_micro_lesson(question: Question, student_answer: str) -> st
     cached_lesson = (concept.micro_lesson or '').strip() if concept else ''
     has_detailed_shape = all(
         marker in cached_lesson
-        for marker in ('Misunderstanding:', 'Concept Clarification:', 'Worked Example:', 'Next Attempt Strategy:')
+        for marker in ('Concept Focus:', 'Concept Clarification:', 'Worked Example:', 'Next Attempt Strategy:')
     )
     if cached_lesson and len(cached_lesson) >= 220 and has_detailed_shape:
         _trace_ai(
@@ -176,7 +176,7 @@ def _get_or_generate_micro_lesson(question: Question, student_answer: str) -> st
         fallback_text='',
     )
 
-    if concept and generated.strip() and not (concept.micro_lesson or '').strip():
+    if concept and generated.strip() and (not (concept.micro_lesson or '').strip() or not has_detailed_shape):
         concept.micro_lesson = generated
         concept.save(update_fields=['micro_lesson'])
         _trace_ai(

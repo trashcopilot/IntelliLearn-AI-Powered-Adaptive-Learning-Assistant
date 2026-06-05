@@ -179,14 +179,24 @@ def _get_selected_educator_classroom(request):
     ).first()
 
 
-def _process_material_ai(material_pk, educator_pk, summary_mode='detailed'):
+def _process_material_ai(material_pk, educator_pk, summary_mode='detailed', upload_index=None, upload_total=None):
     try:
         material = LectureMaterial.objects.get(pk=material_pk)
         _trace_ai(f'🚀 AI Analysis Started: material_id={material_pk}, title="{material.Title}", mode={summary_mode}')
         raw_text = _extract_material_text(material)
         _trace_ai(f'📄 AI Text Extracted: material_id={material_pk}, chars={len(raw_text)}')
 
-        summary_text = summarize_text(raw_text, summary_mode=summary_mode)
+        source_context_parts = [
+            f'Title: {material.Title}',
+            f'Original filename: {material.OriginalFileName}',
+            f'MIME type: {material.MimeType or "unknown"}',
+            f'File size: {material.FileSize} bytes',
+        ]
+        if upload_index is not None and upload_total is not None:
+            source_context_parts.append(f'Upload batch position: {upload_index}/{upload_total}')
+        source_context_parts.append('Instruction: summarize this single uploaded file only. Do not blend content from other uploads.')
+        source_context = '\n'.join(source_context_parts)
+        summary_text = summarize_text(raw_text, summary_mode=summary_mode, source_context=source_context)
         quality = evaluate_summary_quality(summary_text, raw_text, mode=summary_mode)
         summary, _ = Summary.objects.update_or_create(
             Lecture=material,
@@ -235,25 +245,52 @@ def educator_dashboard(request):
     if request.method == 'POST':
         form = LectureUploadForm(request.POST, request.FILES)
         if form.is_valid():
-            uploaded = form.cleaned_data['UploadFile']
-            file_data = uploaded.read()
-            material = LectureMaterial.objects.create(
-                Title=form.cleaned_data['Title'],
-                OriginalFileName=uploaded.name,
-                MimeType=getattr(uploaded, 'content_type', '') or '',
-                FileSize=len(file_data),
-                FileData=file_data,
-                UploadedBy=request.user,
-                Classroom=selected_classroom,
-            )
-
             summary_mode = form.cleaned_data['SummaryMode']
-            run_background(_process_material_ai, material.pk, request.user.pk, summary_mode)
+            base_title = form.cleaned_data['Title'].strip()
+            uploaded_files = form.cleaned_data['UploadFile']
+            created_count = 0
+
+            for file_index, uploaded in enumerate(uploaded_files, start=1):
+                file_data = uploaded.read()
+                material_title = base_title
+                if len(uploaded_files) > 1:
+                    file_stem = os.path.splitext(uploaded.name)[0].strip()
+                    file_hint = slugify(file_stem).replace('-', ' ').strip()
+                    if file_hint:
+                        material_title = f'{base_title} - {file_hint}'
+                    else:
+                        material_title = f'{base_title} - {uploaded.name}'
+
+                material = LectureMaterial.objects.create(
+                    Title=material_title,
+                    OriginalFileName=uploaded.name,
+                    MimeType=getattr(uploaded, 'content_type', '') or '',
+                    FileSize=len(file_data),
+                    FileData=file_data,
+                    UploadedBy=request.user,
+                    Classroom=selected_classroom,
+                )
+
+                run_background(_process_material_ai, material.pk, request.user.pk, summary_mode, file_index, len(uploaded_files))
+                created_count += 1
+
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse(
+                    {
+                        'created_count': created_count,
+                        'summary_mode': summary_mode,
+                        'detail': f'{created_count} lecture material(s) uploaded. AI summary processing started in {summary_mode} mode for each file.',
+                        'redirect_url': request.path,
+                    }
+                )
+
             messages.success(
                 request,
-                f'Lecture uploaded. AI summary processing started in {summary_mode} mode. Quiz questions will be generated when you publish the quiz.',
+                f'{created_count} lecture material(s) uploaded. AI summary processing started in {summary_mode} mode for each file. Quiz questions will be generated when you publish the quiz.',
             )
             return redirect('content:educator_dashboard')
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'errors': form.errors}, status=400)
     else:
         form = LectureUploadForm()
 

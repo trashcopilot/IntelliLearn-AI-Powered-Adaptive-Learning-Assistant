@@ -266,6 +266,13 @@ def _summarization_context(text: str, max_chars: int) -> str:
 	return f'{head}\n\n[...content omitted for length...]\n\n{tail}'
 
 
+def _summary_source_context_block(source_context: str) -> str:
+	cleaned = (source_context or '').strip()
+	if not cleaned:
+		return ''
+	return f'Source metadata and boundaries:\n{cleaned}\n\n'
+
+
 def _split_text_chunks(text: str, chunk_size: int = 5500, overlap: int = 450, max_chunks: int = 6) -> List[str]:
 	cleaned = (text or '').strip()
 	if not cleaned:
@@ -551,7 +558,7 @@ def _needs_summary_enrichment(summary_text: str, mode: str) -> bool:
 	return unique_count < min_unique_by_mode.get((mode or '').lower(), 5)
 
 
-def _build_summary_enrichment_prompt(mode: str, current_summary: str, notes_context: str) -> str:
+def _build_summary_enrichment_prompt(mode: str, current_summary: str, notes_context: str, source_context: str = '') -> str:
 	if mode == 'brief':
 		shape = (
 			'Use these sections exactly: Quick Snapshot, Must-Know Facts, Immediate Takeaway. '
@@ -572,22 +579,24 @@ def _build_summary_enrichment_prompt(mode: str, current_summary: str, notes_cont
 	return (
 		'Improve this summary for broader source coverage and less repetition.\n'
 		'Rules:\n'
+		'- Summarize only the current uploaded file; do not merge in content from other files.\n'
 		'- Keep only source-supported facts.\n'
 		'- Remove repeated ideas across sections.\n'
 		'- Prefer diverse key points over restating one sentence.\n'
 		'- Keep it concise and readable.\n'
 		'- Do not add commentary outside the summary.\n'
 		f'- Structure: {shape}\n\n'
+		f'{_summary_source_context_block(source_context)}'
 		f'Source notes:\n{_summarization_context(notes_context, 12000)}\n\n'
 		f'Current summary:\n{current_summary}'
 	)
 
 
-def _enrich_summary_coverage(summary_text: str, notes_context: str, mode: str) -> str:
+def _enrich_summary_coverage(summary_text: str, notes_context: str, mode: str, source_context: str = '') -> str:
 	if not _needs_summary_enrichment(summary_text, mode):
 		return _polish_summary_text(summary_text, mode)
 
-	prompt = _build_summary_enrichment_prompt(mode, summary_text, notes_context)
+	prompt = _build_summary_enrichment_prompt(mode, summary_text, notes_context, source_context=source_context)
 	enrich_tokens_by_mode = {
 		'brief': 600,
 		'standard': 900,
@@ -644,7 +653,7 @@ def _is_valid_summary_structure(summary_text: str, mode: str) -> bool:
 	return has_bullets and has_multiple_lines and minimum_length
 
 
-def _build_summary_repair_prompt(mode: str, broken_summary: str, notes_context: str, local_summary: str) -> str:
+def _build_summary_repair_prompt(mode: str, broken_summary: str, notes_context: str, local_summary: str, source_context: str = '') -> str:
 	if mode == 'brief':
 		format_rules = (
 			'Use exactly these headings: Quick Snapshot, Must-Know Facts, Immediate Takeaway. '
@@ -668,6 +677,7 @@ def _build_summary_repair_prompt(mode: str, broken_summary: str, notes_context: 
 		f'Formatting rules: {format_rules}\n'
 		'Content rules: keep only high-signal, source-supported facts; remove filler, repetition, and unnecessary detail.\n'
 		'Do not add any title or commentary.\n\n'
+		f'{_summary_source_context_block(source_context)}'
 		f'Source notes:\n{compact_notes}\n\n'
 		f'Broken summary:\n{broken_summary or "N/A"}\n\n'
 		f'Local draft summary:\n{local_summary or "N/A"}'
@@ -720,7 +730,7 @@ def _build_structured_fallback(summary_text: str, mode: str) -> str:
 # ===== GEMINI API WRAPPER =====
 
 
-def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: str = 'detailed') -> str:
+def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: str = 'detailed', source_context: str = '') -> str:
 	mode = (summary_mode or '').strip().lower()
 	if mode not in {'brief', 'standard', 'detailed'}:
 		mode = 'detailed'
@@ -765,6 +775,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 			"Use these headings exactly:\n"
 			"Quick Snapshot\nMust-Know Facts\nImmediate Takeaway\n\n"
 			"Rules:\n"
+			"- Summarize only the current uploaded file; do not merge in content from other files.\n"
 			"- Total 90-160 words.\n"
 			"- Snapshot: 1-2 sentences only.\n"
 			"- Must-Know Facts: 3-4 concise bullets.\n"
@@ -772,6 +783,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 			"- Keep only source-supported information.\n\n"
 			"- Plain text only; do not use markdown symbols like #, **, or __.\n"
 			"- Put each heading on its own line.\n\n"
+			f"{_summary_source_context_block(source_context)}"
 			f"Source notes:\n{notes_context}"
 		)
 	elif mode == 'standard':
@@ -780,6 +792,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 			"Use these headings exactly:\n"
 			"Overview\nKey Concepts\nCausal Links\nPractical Applications\n\n"
 			"Rules:\n"
+			"- Summarize only the current uploaded file; do not merge in content from other files.\n"
 			"- Total 220-330 words.\n"
 			"- Overview: 2-3 sentences.\n"
 			"- Key Concepts: 5-7 bullets with distinct ideas.\n"
@@ -788,6 +801,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 			"- Keep only source-supported information.\n\n"
 			"- Plain text only; do not use markdown symbols like #, **, or __.\n"
 			"- Put each heading on its own line.\n\n"
+			f"{_summary_source_context_block(source_context)}"
 			f"Source notes:\n{notes_context}"
 		)
 	else:
@@ -796,6 +810,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 			"Use these headings exactly:\n"
 			"Synthesis\nConcept Architecture\nMechanisms and Dependencies\nCritical Nuances\nApplied Implications\nRevision Checklist\n\n"
 			"Rules:\n"
+			"- Summarize only the current uploaded file; do not merge in content from other files.\n"
 			"- Total 380-520 words.\n"
 			"- Synthesis: 3-4 sentences integrating the whole topic.\n"
 			"- Concept Architecture: 6-8 bullets organizing the main idea hierarchy.\n"
@@ -806,6 +821,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 			"- Keep only source-supported information.\n\n"
 			"- Plain text only; do not use markdown symbols like #, **, or __.\n"
 			"- Put each heading on its own line.\n\n"
+			f"{_summary_source_context_block(source_context)}"
 			f"Source notes:\n{notes_context}"
 		)
 
@@ -818,19 +834,19 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 	refined = _dedupe_bullets(refined)
 	refined = _finalize_summary_text(refined)
 	refined = _polish_summary_text(refined, mode)
-	refined = _enrich_summary_coverage(refined, notes_context, mode)
+	refined = _enrich_summary_coverage(refined, notes_context, mode, source_context=source_context)
 	if _is_valid_summary_structure(refined, mode):
 		_set_last_summary_failure_reason('none')
 		return refined
 
 	if refined:
-		repair_prompt = _build_summary_repair_prompt(mode, refined, notes_context, local_summary)
+		repair_prompt = _build_summary_repair_prompt(mode, refined, notes_context, local_summary, source_context=source_context)
 		repair_tokens = 520 if mode == 'brief' else (900 if mode == 'standard' else 1300)
 		repaired = _generate_text(repair_prompt, temperature=0.2, max_output_tokens=repair_tokens)
 		repaired = _dedupe_bullets(repaired)
 		repaired = _finalize_summary_text(repaired)
 		repaired = _polish_summary_text(repaired, mode)
-		repaired = _enrich_summary_coverage(repaired, notes_context, mode)
+		repaired = _enrich_summary_coverage(repaired, notes_context, mode, source_context=source_context)
 		if _is_valid_summary_structure(repaired, mode):
 			_set_last_summary_failure_reason('none')
 			return repaired
@@ -842,7 +858,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 		salvaged = _dedupe_bullets(salvaged)
 		salvaged = _finalize_summary_text(salvaged)
 		salvaged = _polish_summary_text(salvaged, mode)
-		salvaged = _enrich_summary_coverage(salvaged, notes_context, mode)
+		salvaged = _enrich_summary_coverage(salvaged, notes_context, mode, source_context=source_context)
 		if salvaged.strip():
 			_set_last_summary_failure_reason('structure_salvaged')
 			return salvaged.strip()
@@ -970,22 +986,23 @@ def generate_gemini_micro_lesson(
 		'You are a supportive tutor. Create a detailed micro-lesson after a wrong quiz answer.\n'
 		'Output plain text only with no markdown symbols.\n'
 		'Use this structure with clear labels on separate lines:\n'
-		'Misunderstanding:\n'
+		'Concept Focus:\n'
 		'Concept Clarification:\n'
 		'Worked Example:\n'
 		'Next Attempt Strategy:\n'
 		'Requirements:\n'
-		'- Explain precisely what the student likely misunderstood.\n'
+		'- Make Concept Focus one complete sentence that explains what the question is asking in relation to the concept.\n'
+		'- Keep Concept Focus short and specific so it is not cut off.\n'
 		'- Provide a deeper explanation in 4 to 6 teaching sentences.\n'
 		'- Include one short concrete example connected to the question.\n'
 		'- End with 2 actionable steps for the next attempt.\n'
 		'- Keep language simple, accurate, and encouraging.\n'
-		'- Target 140 to 220 words.\n\n'
+		'- Target 120 to 180 words.\n\n'
 		f'Question{concept_clause}: {question_text}\n'
 		f'Student answer: {student_answer or "(empty)"}\n'
 		f'Correct answer: {correct_answer}'
 	)
-	return _generate_text(prompt, temperature=0.2, max_output_tokens=420)
+	return _generate_text(prompt, temperature=0.2, max_output_tokens=520)
 
 
 # ===== LOCAL INSTRUCTION MODEL WRAPPER =====
@@ -1050,7 +1067,7 @@ def _parse_mcq_response(raw: str, count: int) -> List[Dict[str, str]]:
 	return items[:count]
 
 
-def generate_local_summary(text: str, summary_mode: str = 'detailed') -> str:
+def generate_local_summary(text: str, summary_mode: str = 'detailed', source_context: str = '') -> str:
 	mode = (summary_mode or '').strip().lower()
 	if mode not in {'brief', 'standard', 'detailed'}:
 		mode = 'detailed'
@@ -1058,11 +1075,13 @@ def generate_local_summary(text: str, summary_mode: str = 'detailed') -> str:
 		return ''
 
 	prompt = _local_instruction_prefix() + (
+		'Summarize only the current uploaded file; do not merge in content from other files.\n'
 		f'Create a {mode} educational summary from the notes below.\n'
 		'Use clear headings and concise bullet points in plain text only.\n'
 		'Do not use markdown symbols like #, **, or __.\n'
 		'Put each heading on its own line.\n'
 		'Keep it factual and avoid commentary.\n\n'
+		f'{_summary_source_context_block(source_context)}'
 		f'Notes:\n{text[:12000]}'
 	)
 	raw = _call_local_model(prompt, temperature=0.2, max_output_tokens=700)
@@ -1183,15 +1202,17 @@ def generate_local_micro_lesson(
 	prompt = _local_instruction_prefix() + (
 		'Create a detailed micro-lesson for a student who answered incorrectly.\n'
 		'Use plain text only with this exact label order on separate lines:\n'
-		'Misunderstanding:\n'
+		'Concept Focus:\n'
 		'Concept Clarification:\n'
 		'Worked Example:\n'
 		'Next Attempt Strategy:\n'
+		'Write Concept Focus as one complete sentence that explains what the question is asking.\n'
+		'Keep Concept Focus short and specific so it does not run long.\n'
 		'Include 4 to 6 explanation sentences and 2 action steps.\n'
-		'Target 140 to 220 words with simple educational language.\n\n'
+		'Target 120 to 180 words with simple educational language.\n\n'
 		f'Concept: {concept_name or "this concept"}\n'
 		f'Question: {question_text}\n'
 		f'Student answer: {student_answer or "(empty)"}\n'
 		f'Correct answer: {correct_answer}'
 	)
-	return _call_local_model(prompt, temperature=0.25, max_output_tokens=420)
+	return _call_local_model(prompt, temperature=0.25, max_output_tokens=520)

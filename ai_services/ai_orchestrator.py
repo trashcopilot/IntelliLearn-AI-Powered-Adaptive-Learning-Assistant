@@ -31,6 +31,49 @@ _LOCAL_FALLBACK_ATTEMPTS = max(1, int(os.getenv('LOCAL_FALLBACK_ATTEMPTS', '1'))
 _LOCAL_FALLBACK_RETRY_DELAY = float(os.getenv('LOCAL_FALLBACK_RETRY_DELAY', '0.5'))
 
 
+def _concept_focus_fallback(concept_name: str, question_text: str) -> str:
+	concept_label = concept_name.strip() if concept_name and concept_name.strip() else 'the concept'
+	question_hint = (question_text or '').strip().rstrip('?')
+	if question_hint:
+		return (
+			f'Concept Focus: This question asks you to connect {concept_label} to the problem being asked and '
+			f'compare the key ideas before giving your answer.'
+		)
+	return f'Concept Focus: This question asks you to connect {concept_label} to the problem being asked before giving your answer.'
+
+
+def _normalize_micro_lesson(text: str, question_text: str = '', concept_name: str = '') -> str:
+	lines = [line.strip() for line in (text or '').splitlines() if line.strip()]
+	if not lines:
+		return ''
+
+	normalized_lines = []
+	for index, line in enumerate(lines):
+		if ':' in line:
+			label, body = line.split(':', 1)
+			body = body.strip()
+			label_text = label.strip()
+			if index == 0 and label_text.lower() == 'concept focus':
+				looks_truncated = (
+					not body
+					or len(body) < 45
+					or body[-1] not in '.!?'
+					or body.lower().endswith(('between', 'and', 'of', 'to', 'for', 'with', 'in', 'on', 'about'))
+				)
+				if looks_truncated:
+					normalized_lines.append(_concept_focus_fallback(concept_name, question_text))
+					continue
+			if body and body[-1] not in '.!?':
+				body += '.'
+			normalized_lines.append(f'{label_text}: {body}' if body else f'{label_text}:')
+		else:
+			if line[-1] not in '.!?':
+				line += '.'
+			normalized_lines.append(line)
+
+	return '\n'.join(normalized_lines).strip()
+
+
 def _trace_ai(message: str) -> None:
 	logger.info(message)
 	print(message, flush=True)
@@ -97,7 +140,7 @@ def _normalize_summary_mode(summary_mode: str) -> str:
 	return mode
 
 
-def summarize_text(text: str, summary_mode: str = 'detailed') -> str:
+def summarize_text(text: str, summary_mode: str = 'detailed', source_context: str = '') -> str:
 	if not text:
 		_trace_ai('ℹ️ AI Summary Skipped: no text available.')
 		return ''
@@ -105,13 +148,13 @@ def summarize_text(text: str, summary_mode: str = 'detailed') -> str:
 	mode = _normalize_summary_mode(summary_mode)
 	_trace_ai(f'🚀 AI Summary Started: mode={mode}, chars={len(text)}')
 
-	refined = _run_gemini_primary('AI Summary', lambda: generate_gemini_summary(text, summary_mode=mode))
+	refined = _run_gemini_primary('AI Summary', lambda: generate_gemini_summary(text, summary_mode=mode, source_context=source_context))
 	if refined and refined.strip():
 		_trace_ai(f'✅ AI Summary Success: Gemini used for mode={mode}')
 		return refined.strip()
 
 	_trace_ai(f'⚠️ AI Summary Gemini exhausted, trying local fallback for mode={mode}')
-	local_result = _run_local_fallback('AI Summary', lambda: generate_local_summary(text, summary_mode=mode))
+	local_result = _run_local_fallback('AI Summary', lambda: generate_local_summary(text, summary_mode=mode, source_context=source_context))
 	if local_result and local_result.strip():
 		_trace_ai(f'✅ AI Summary Success: local fallback used for mode={mode}')
 		return local_result.strip()
@@ -256,7 +299,7 @@ def generate_micro_lesson(
 	)
 	if lesson and lesson.strip():
 		_trace_ai('✅ AI Micro-Lesson Success: Gemini used')
-		return lesson.strip()
+		return _normalize_micro_lesson(lesson, question_text=question_text, concept_name=concept_name)
 
 	_trace_ai('⚠️ AI Micro-Lesson Gemini exhausted, trying local fallback')
 	local_lesson = _run_local_fallback(
@@ -270,7 +313,7 @@ def generate_micro_lesson(
 	)
 	if local_lesson and local_lesson.strip():
 		_trace_ai('✅ AI Micro-Lesson Success: local fallback used')
-		return local_lesson.strip()
+		return _normalize_micro_lesson(local_lesson, question_text=question_text, concept_name=concept_name)
 
 	_trace_ai('⚠️ AI Micro-Lesson local fallback exhausted')
 	return ''
