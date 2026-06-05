@@ -50,6 +50,54 @@
     padding: 1.5rem;
 }
 
+.summary-card .card-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.summary-card label,
+.summary-card .form-label,
+.summary-card .form-text,
+.summary-card .helptext,
+.summary-card .upload-dropzone-copy strong,
+.summary-card .upload-dropzone-copy span,
+.summary-card .upload-selected-files,
+.summary-card .upload-file-empty,
+.summary-card .upload-file-chip,
+.summary-card .upload-file-chip span,
+.summary-card .upload-progress-label,
+.summary-card .upload-progress-percent,
+.summary-card .upload-progress-panel strong,
+.summary-card .upload-progress-panel .text-muted {
+    color: #eaf2ff !important;
+}
+
+.summary-card .form-text,
+.summary-card .helptext,
+.summary-card .upload-dropzone-copy span,
+.summary-card .upload-file-chip span,
+.summary-card .upload-progress-panel .text-muted {
+    color: rgba(234, 242, 255, 0.84) !important;
+}
+
+.summary-card .upload-dropzone-copy strong {
+    color: #f8fbff !important;
+}
+
+.summary-card .upload-file-empty {
+    background: rgba(10, 16, 28, 0.6);
+}
+
+#lecture-upload-form {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
 .queue-item {
     background: rgba(10, 16, 28, 0.5);
     border: 1px solid rgba(234, 242, 255, 0.08);
@@ -179,6 +227,146 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
+}
+
+.upload-dropzone {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 9rem;
+    padding: 1rem;
+    border: 1px dashed rgba(104, 215, 255, 0.45);
+    border-radius: 1rem;
+    background:
+        linear-gradient(180deg, rgba(104, 215, 255, 0.10), rgba(104, 215, 255, 0.03)),
+        rgba(10, 16, 28, 0.5);
+    transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.is-dragover {
+    border-color: rgba(104, 215, 255, 0.9);
+    box-shadow: 0 0 0 2px rgba(104, 215, 255, 0.12);
+    transform: translateY(-1px);
+}
+
+.upload-dropzone-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    text-align: center;
+    pointer-events: none;
+}
+
+.upload-dropzone-copy strong {
+    font-size: 1rem;
+    letter-spacing: 0.01em;
+}
+
+.upload-dropzone-copy span {
+    color: rgba(233, 242, 255, 0.7);
+    font-size: 0.92rem;
+}
+
+.upload-dropzone input[type='file'] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.upload-selected-files {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.upload-file-empty {
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.8rem;
+    border: 1px solid rgba(234, 242, 255, 0.08);
+    background: rgba(10, 16, 28, 0.4);
+}
+
+.upload-file-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.85rem;
+    border: 1px solid rgba(234, 242, 255, 0.08);
+    background: rgba(10, 16, 28, 0.58);
+}
+
+.upload-file-chip strong {
+    display: block;
+    font-size: 0.95rem;
+    word-break: break-word;
+}
+
+.upload-file-chip span {
+    display: block;
+    color: rgba(233, 242, 255, 0.7);
+    font-size: 0.84rem;
+    margin-top: 0.15rem;
+}
+
+.upload-file-chip .upload-file-remove {
+    flex-shrink: 0;
+}
+
+.upload-progress-panel {
+    padding: 0.95rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(104, 215, 255, 0.16);
+    background: rgba(10, 16, 28, 0.55);
+}
+
+.upload-scroll-body {
+    flex: 1;
+    min-height: 0;
+}
+
+.upload-scroll-body.queue-scroll-body {
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.3rem;
+}
+
+.upload-scroll-body.queue-scroll-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.upload-scroll-body.queue-scroll-body::-webkit-scrollbar-thumb {
+    background: rgba(104, 215, 255, 0.35);
+    border-radius: 999px;
+}
+
+.upload-file-progress-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.upload-file-progress-row {
+    padding: 0.75rem 0.85rem;
+    border-radius: 0.85rem;
+    border: 1px solid rgba(234, 242, 255, 0.08);
+    background: rgba(4, 9, 16, 0.35);
+}
+
+.upload-file-progress-row .progress {
+    background: rgba(233, 242, 255, 0.08);
+}
+
+.upload-file-progress-row .progress-bar {
+    background: linear-gradient(90deg, #68d7ff, #57f0b2);
 }
 
 .queue-scroll-body {
@@ -617,6 +805,11 @@
 .quiz-panel .alert-warning p,
 .quiz-panel .alert-warning strong {
     color: #fff3cd !important;
+}
+
+.quiz-panel .quiz-text-block {
+    overflow-wrap: anywhere;
+    white-space: pre-line;
 }
 
 .quiz-review-list {

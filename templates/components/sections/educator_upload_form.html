@@ -1,5 +1,55 @@
-<form method="post" enctype="multipart/form-data">
+<form id="lecture-upload-form" method="post" enctype="multipart/form-data" action="{% url 'content:educator_dashboard' %}">
     {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit" class="btn btn-success">Upload &amp; Generate AI Draft</button>
+    <div class="upload-scroll-body queue-scroll-body">
+        <div class="mb-3">
+            <label for="{{ form.Title.id_for_label }}" class="form-label">{{ form.Title.label }}</label>
+            {{ form.Title }}
+            {% if form.Title.help_text %}
+                <div class="form-text">{{ form.Title.help_text }}</div>
+            {% endif %}
+            {{ form.Title.errors }}
+        </div>
+
+        <div class="mb-3">
+            <label for="{{ form.UploadFile.id_for_label }}" class="form-label">{{ form.UploadFile.label|default:'Upload files' }}</label>
+            <div class="upload-dropzone" id="lecture-upload-dropzone" role="button" tabindex="0" aria-label="Choose or drop lecture files">
+                <div class="upload-dropzone-copy">
+                    <strong>Drop files here</strong>
+                    <span>or click to browse multiple lecture materials.</span>
+                </div>
+                {{ form.UploadFile }}
+            </div>
+            {% if form.UploadFile.help_text %}
+                <div class="form-text">{{ form.UploadFile.help_text }}</div>
+            {% endif %}
+            {{ form.UploadFile.errors }}
+            <div class="upload-selected-files mt-3" id="lecture-upload-selected-files"></div>
+        </div>
+
+        <div class="mb-3">
+            <label for="{{ form.SummaryMode.id_for_label }}" class="form-label">{{ form.SummaryMode.label }}</label>
+            {{ form.SummaryMode }}
+            {% if form.SummaryMode.help_text %}
+                <div class="form-text">{{ form.SummaryMode.help_text }}</div>
+            {% endif %}
+            {{ form.SummaryMode.errors }}
+        </div>
+
+        <div id="lecture-upload-status" class="alert alert-info d-none" role="status"></div>
+
+        <div id="lecture-upload-progress" class="upload-progress-panel d-none">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>Upload progress</strong>
+                <span id="lecture-upload-progress-label" class="small text-muted">0%</span>
+            </div>
+            <div class="progress mb-3" style="height: 0.8rem;">
+                <div id="lecture-upload-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+            </div>
+            <div id="lecture-upload-file-progress-list" class="upload-file-progress-list"></div>
+        </div>
+
+        <p class="text-muted small mb-3">You can select multiple files before uploading. Each file becomes its own lecture material and AI draft.</p>
+    </div>
+
+    <button type="submit" class="btn btn-success" id="lecture-upload-submit">Upload &amp; Generate AI Draft</button>
 </form>
