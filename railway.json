@@ -2,6 +2,6 @@
   "$schema": "https://schema.railway.app/railway.schema.json",
   "deploy": {
     "startCommand": "gunicorn intellilearn_project.wsgi:application",
-    "preDeployCommand": "python manage.py collectstatic --noinput"
+    "preDeployCommand": "python manage.py migrate && python manage.py collectstatic --noinput"
   }
 }
