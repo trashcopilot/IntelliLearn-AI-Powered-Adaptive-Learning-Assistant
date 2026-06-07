@@ -38,7 +38,7 @@ AI_PROCESSING_TIMEOUT_MINUTES = max(10, int(os.getenv('AI_PROCESSING_TIMEOUT_MIN
 QUIZ_GENERATION_TARGETS = {
     'mcq': {Question.TYPE_MCQ: 10},
     'constructed': {Question.TYPE_CONSTRUCTED: 10},
-    'both': {Question.TYPE_MCQ: 10, Question.TYPE_CONSTRUCTED: 10},
+    'both': {Question.TYPE_MCQ: 5, Question.TYPE_CONSTRUCTED: 5},
 }
 DIFFICULTY_MIX_PATTERN = ['Easy', 'Easy', 'Easy', 'Medium', 'Medium', 'Medium', 'Medium', 'Hard', 'Hard', 'Hard']
 QUIZ_GENERATION_MAX_ATTEMPTS = max(1, int(os.getenv('QUIZ_GENERATION_MAX_ATTEMPTS', '3')))
