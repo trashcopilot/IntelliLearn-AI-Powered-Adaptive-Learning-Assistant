@@ -16,7 +16,7 @@ GEMINI_MODEL_FALLBACKS = os.getenv(
 	'GEMINI_MODEL_FALLBACKS',
 	'gemini-2.5-flash',
 )
-LOCAL_FALLBACK_MODEL = os.getenv('LOCAL_FALLBACK_MODEL', 'phi3:mini')
+LOCAL_FALLBACK_MODEL = os.getenv('LOCAL_FALLBACK_MODEL', 'google/flan-t5-base')
 LOCAL_FALLBACK_URL = os.getenv('LOCAL_FALLBACK_URL', 'http://localhost:11434/api/generate')
 LOCAL_FALLBACK_TIMEOUT_SECONDS = int(os.getenv('LOCAL_FALLBACK_TIMEOUT_SECONDS', '60'))
 LOCAL_FALLBACK_TOP_P = float(os.getenv('LOCAL_FALLBACK_TOP_P', '0.9'))
@@ -174,10 +174,9 @@ def _call_local_model(prompt: str, temperature: float = 0.2, max_output_tokens: 
 		body_lower = body.lower()
 		if exc.code == 404 and 'model' in body_lower and 'not found' in body_lower:
 			logger.warning(
-				'Local fallback model "%s" was not found at %s. Pull the model first (for Ollama: "ollama pull %s").',
+				'Local fallback model "%s" was not found at %s. Ensure the requested model is available on your local model server or update LOCAL_FALLBACK_URL to point to a compatible endpoint.',
 				LOCAL_FALLBACK_MODEL,
 				LOCAL_FALLBACK_URL,
-				LOCAL_FALLBACK_MODEL,
 			)
 		elif exc.code == 404:
 			logger.warning('Local fallback endpoint returned 404. Check LOCAL_FALLBACK_URL=%s', LOCAL_FALLBACK_URL)
