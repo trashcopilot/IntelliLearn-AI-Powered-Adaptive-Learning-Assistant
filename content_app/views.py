@@ -223,6 +223,15 @@ def _process_material_ai(material_pk, educator_pk, summary_mode='detailed', uplo
         source_context_parts.append('Instruction: summarize this single uploaded file only. Do not blend content from other uploads.')
         source_context = '\n'.join(source_context_parts)
         summary_text = summarize_text(raw_text, summary_mode=summary_mode, source_context=source_context)
+
+        if not summary_text or not summary_text.strip():
+            _trace_ai(
+                f'⚠️ AI Analysis Summarization Failed: material_id={material_pk}, '
+                'both Gemini and local fallback returned empty — persisting as failure.'
+            )
+            _persist_failed_summary(material, 'all_ai_sources_exhausted')
+            return
+
         quality = evaluate_summary_quality(summary_text, raw_text, mode=summary_mode)
         # Use create_defaults so IsArchived=False is only applied on creation and
         # never written back to an existing record, preserving any archived state.
