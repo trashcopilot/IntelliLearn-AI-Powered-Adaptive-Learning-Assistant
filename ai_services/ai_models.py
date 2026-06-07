@@ -740,26 +740,22 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 		_set_last_summary_failure_reason('empty_input')
 		return local_summary
 
-	fast_path = len(text) > 12000
+	# Small documents (<10k chars) skip enrichment; large documents (>=15k chars) use map-reduce.
+	skip_enrichment = len(text) < 10000
+	use_map_reduce = len(text) >= 15000 and len(chunks) > 1
 
 	extracted_notes: List[str] = []
-	# Use a map pass for medium/long notes to improve source coverage.
-	if len(text) > 9000 and len(chunks) > 1:
+	# Use a map pass only for long documents to improve source coverage.
+	if use_map_reduce:
 		for index, chunk in enumerate(chunks, start=1):
 			map_prompt = (
-				f'You are an expert academic curator extracting high-signal content from lecture notes chunk {index}/{len(chunks)}.\n'
-				'Prioritize contextual relationships (cause-effect, dependencies, hierarchy), not isolated keyword lists.\n'
+				f'Extract key content from lecture notes chunk {index}/{len(chunks)}.\n'
 				'Output strictly in this format:\n'
-				'Structural Markers:\n- ...\n'
-				'Thematic Clusters:\n- ...\n'
-				'Technical Anchors:\n- ...\n'
-				'Implications:\n- ...\n'
+				'Key Points:\n- ...\n'
+				'Connections:\n- ...\n'
 				'Rules:\n'
 				'- Keep only information directly supported by this chunk.\n'
-				'- Explain how concepts connect when possible; do not only list topics.\n'
-				'- Omit examples, anecdotes, repetition, and filler text unless essential for understanding.\n'
-				'- If a section has no valid content, write "- None".\n'
-				'- Do not add a title or any commentary outside the required sections.\n\n'
+				'- If a section has no valid content, write "- None".\n\n'
 				f'Lecture notes chunk:\n{chunk}'
 			)
 			mapped = _generate_text(map_prompt, temperature=0.1, max_output_tokens=420)
@@ -777,14 +773,10 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 			"Use these headings exactly:\n"
 			"Quick Snapshot\nMust-Know Facts\nImmediate Takeaway\n\n"
 			"Rules:\n"
-			"- Summarize only the current uploaded file; do not merge in content from other files.\n"
+			"- Summarize only the current uploaded file.\n"
 			"- Total 90-160 words.\n"
-			"- Snapshot: 1-2 sentences only.\n"
-			"- Must-Know Facts: 3-4 concise bullets.\n"
-			"- Immediate Takeaway: exactly 1 bullet.\n"
-			"- Keep only source-supported information.\n\n"
-			"- Plain text only; do not use markdown symbols like #, **, or __.\n"
-			"- Put each heading on its own line.\n\n"
+			"- Snapshot: 1-2 sentences. Must-Know Facts: 3-4 bullets. Immediate Takeaway: 1 bullet.\n"
+			"- Plain text only; no #, **, or __. Each heading on its own line.\n\n"
 			f"{_summary_source_context_block(source_context)}"
 			f"Source notes:\n{notes_context}"
 		)
@@ -794,15 +786,10 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 			"Use these headings exactly:\n"
 			"Overview\nKey Concepts\nCausal Links\nPractical Applications\n\n"
 			"Rules:\n"
-			"- Summarize only the current uploaded file; do not merge in content from other files.\n"
+			"- Summarize only the current uploaded file.\n"
 			"- Total 220-330 words.\n"
-			"- Overview: 2-3 sentences.\n"
-			"- Key Concepts: 5-7 bullets with distinct ideas.\n"
-			"- Causal Links: 2-3 bullets showing relationships or dependencies.\n"
-			"- Practical Applications: 2-3 bullets for use in real tasks/study.\n"
-			"- Keep only source-supported information.\n\n"
-			"- Plain text only; do not use markdown symbols like #, **, or __.\n"
-			"- Put each heading on its own line.\n\n"
+			"- Overview: 2-3 sentences. Key Concepts: 5-7 bullets. Causal Links: 2-3 bullets. Practical Applications: 2-3 bullets.\n"
+			"- Plain text only; no #, **, or __. Each heading on its own line.\n\n"
 			f"{_summary_source_context_block(source_context)}"
 			f"Source notes:\n{notes_context}"
 		)
@@ -812,17 +799,11 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 			"Use these headings exactly:\n"
 			"Synthesis\nConcept Architecture\nMechanisms and Dependencies\nCritical Nuances\nApplied Implications\nRevision Checklist\n\n"
 			"Rules:\n"
-			"- Summarize only the current uploaded file; do not merge in content from other files.\n"
+			"- Summarize only the current uploaded file.\n"
 			"- Total 380-520 words.\n"
-			"- Synthesis: 3-4 sentences integrating the whole topic.\n"
-			"- Concept Architecture: 6-8 bullets organizing the main idea hierarchy.\n"
-			"- Mechanisms and Dependencies: 4-5 bullets explaining how elements affect each other.\n"
-			"- Critical Nuances: 3-4 bullets of caveats, boundaries, or assumptions.\n"
-			"- Applied Implications: 3-4 bullets of high-value practical interpretation.\n"
-			"- Revision Checklist: 4-5 concise bullets for exam/study review.\n"
-			"- Keep only source-supported information.\n\n"
-			"- Plain text only; do not use markdown symbols like #, **, or __.\n"
-			"- Put each heading on its own line.\n\n"
+			"- Synthesis: 3-4 sentences. Concept Architecture: 6-8 bullets. Mechanisms and Dependencies: 4-5 bullets.\n"
+			"- Critical Nuances: 3-4 bullets. Applied Implications: 3-4 bullets. Revision Checklist: 4-5 bullets.\n"
+			"- Plain text only; no #, **, or __. Each heading on its own line.\n\n"
 			f"{_summary_source_context_block(source_context)}"
 			f"Source notes:\n{notes_context}"
 		)
@@ -830,20 +811,20 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 	tokens_by_mode = {
 		'brief': 520,
 		'standard': 900,
-		'detailed': 1300,
+		'detailed': 800,
 	}
-	refined = _generate_text(prompt, temperature=0.2 if mode == 'brief' else 0.22, max_output_tokens=tokens_by_mode.get(mode, 900))
+	refined = _generate_text(prompt, temperature=0.25, max_output_tokens=tokens_by_mode.get(mode, 800))
 	refined = _dedupe_bullets(refined)
 	refined = _finalize_summary_text(refined)
 	refined = _polish_summary_text(refined, mode)
-	if not fast_path:
+	if not skip_enrichment:
 		refined = _enrich_summary_coverage(refined, notes_context, mode, source_context=source_context)
 	if _is_valid_summary_structure(refined, mode):
 		_set_last_summary_failure_reason('none')
 		return refined
 
 	if refined:
-		if fast_path:
+		if skip_enrichment:
 			salvaged = _build_structured_fallback(refined, mode)
 			salvaged = _dedupe_bullets(salvaged)
 			salvaged = _finalize_summary_text(salvaged)
@@ -854,12 +835,12 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 				return salvaged.strip()
 
 		repair_prompt = _build_summary_repair_prompt(mode, refined, notes_context, local_summary, source_context=source_context)
-		repair_tokens = 520 if mode == 'brief' else (900 if mode == 'standard' else 1300)
-		repaired = _generate_text(repair_prompt, temperature=0.2, max_output_tokens=repair_tokens)
+		repair_tokens = 520 if mode == 'brief' else (900 if mode == 'standard' else 800)
+		repaired = _generate_text(repair_prompt, temperature=0.25, max_output_tokens=repair_tokens)
 		repaired = _dedupe_bullets(repaired)
 		repaired = _finalize_summary_text(repaired)
 		repaired = _polish_summary_text(repaired, mode)
-		if not fast_path:
+		if not skip_enrichment:
 			repaired = _enrich_summary_coverage(repaired, notes_context, mode, source_context=source_context)
 		if _is_valid_summary_structure(repaired, mode):
 			_set_last_summary_failure_reason('none')
@@ -872,7 +853,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 		salvaged = _dedupe_bullets(salvaged)
 		salvaged = _finalize_summary_text(salvaged)
 		salvaged = _polish_summary_text(salvaged, mode)
-		if not fast_path:
+		if not skip_enrichment:
 			salvaged = _enrich_summary_coverage(salvaged, notes_context, mode, source_context=source_context)
 		if salvaged.strip():
 			_set_last_summary_failure_reason('structure_salvaged')
