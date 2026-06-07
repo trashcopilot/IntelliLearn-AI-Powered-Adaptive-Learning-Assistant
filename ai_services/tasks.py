@@ -1,10 +1,14 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 from django.db import close_old_connections
 
-# Gemini work is serialized upstream, so a single worker avoids queued uploads
-# from competing for threads while they wait on the same external dependency.
-_executor = ThreadPoolExecutor(max_workers=1)
+# Allow up to 3 concurrent background AI jobs so batch uploads process in
+# parallel.  Each job's Gemini calls already fan out across model candidates
+# concurrently, so increasing workers here gives a meaningful throughput boost
+# without overwhelming the API.  Override via BACKGROUND_AI_WORKERS env var.
+_BACKGROUND_AI_WORKERS = max(1, int(os.getenv('BACKGROUND_AI_WORKERS', '3')))
+_executor = ThreadPoolExecutor(max_workers=_BACKGROUND_AI_WORKERS)
 
 
 def run_background(task, *args, **kwargs):

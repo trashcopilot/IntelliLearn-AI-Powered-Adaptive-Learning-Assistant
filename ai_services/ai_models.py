@@ -2,10 +2,10 @@ import logging
 import json
 import os
 import re
-import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from functools import lru_cache
-from typing import Dict, List
+from typing import Dict, List, Optional
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL_NAME = os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview')
 GEMINI_MODEL_FALLBACKS = os.getenv(
 	'GEMINI_MODEL_FALLBACKS',
-	'gemini-2.5-flash',
+	'gemini-2.5-flash,gemini-1.5-flash',
 )
 LOCAL_FALLBACK_MODEL = os.getenv('LOCAL_FALLBACK_MODEL', 'google/flan-t5-base')
 LOCAL_FALLBACK_URL = os.getenv('LOCAL_FALLBACK_URL', 'http://localhost:11434/api/generate')
@@ -22,9 +22,11 @@ LOCAL_FALLBACK_TIMEOUT_SECONDS = int(os.getenv('LOCAL_FALLBACK_TIMEOUT_SECONDS',
 LOCAL_FALLBACK_TOP_P = float(os.getenv('LOCAL_FALLBACK_TOP_P', '0.9'))
 LOCAL_FALLBACK_REPEAT_PENALTY = float(os.getenv('LOCAL_FALLBACK_REPEAT_PENALTY', '1.1'))
 LOCAL_FALLBACK_NUM_CTX = int(os.getenv('LOCAL_FALLBACK_NUM_CTX', '4096'))
+GEMINI_API_TIMEOUT_SECONDS = int(os.getenv('GEMINI_API_TIMEOUT_SECONDS', '30'))
+# Threshold above which text is chunked; below this Gemini handles it directly.
+DIRECT_SUMMARIZATION_CHAR_LIMIT = int(os.getenv('DIRECT_SUMMARIZATION_CHAR_LIMIT', '50000'))
 _GEMINI_AUTH_DISABLED = False
 _MAX_TRANSIENT_RETRIES = 2
-_GEMINI_CALL_SEMAPHORE = threading.Semaphore(1)  # Max 1 concurrent Gemini API call
 _LAST_SUMMARY_FAILURE_REASON = 'none'
 
 
@@ -272,7 +274,14 @@ def _summary_source_context_block(source_context: str) -> str:
 	return f'Source metadata and boundaries:\n{cleaned}\n\n'
 
 
-def _split_text_chunks(text: str, chunk_size: int = 5500, overlap: int = 450, max_chunks: int = 6) -> List[str]:
+def _split_text_chunks(text: str, chunk_size: int = 20000, overlap: int = 500, max_chunks: int = 6) -> List[str]:
+	"""Split text into semantic chunks using paragraph/section boundaries.
+
+	Only called for documents exceeding DIRECT_SUMMARIZATION_CHAR_LIMIT.
+	Prefers splitting on section headers (lines starting with a capital word
+	followed by a newline) or double-newline paragraph breaks, falling back to
+	sentence boundaries.
+	"""
 	cleaned = (text or '').strip()
 	if not cleaned:
 		return []
@@ -287,10 +296,25 @@ def _split_text_chunks(text: str, chunk_size: int = 5500, overlap: int = 450, ma
 	while start < text_len and len(chunks) < max_chunks:
 		end = min(start + chunk_size, text_len)
 		if end < text_len:
-			paragraph_end = cleaned.rfind('\n\n', start + int(chunk_size * 0.55), end)
-			sentence_end = cleaned.rfind('.', start + int(chunk_size * 0.55), end)
+			search_start = start + int(chunk_size * 0.5)
+			# Prefer paragraph breaks (double newline) as semantic boundaries.
+			paragraph_end = cleaned.rfind('\n\n', search_start, end)
+			# Fall back to single newline before a likely section header.
+			section_end = -1
+			newline_pos = cleaned.rfind('\n', search_start, end)
+			if newline_pos != -1:
+				next_line_start = newline_pos + 1
+				next_line_end = cleaned.find('\n', next_line_start)
+				next_line = cleaned[next_line_start: next_line_end if next_line_end != -1 else next_line_start + 80].strip()
+				# Heuristic: short all-caps or title-case line = section header.
+				if next_line and (next_line.isupper() or (next_line[0].isupper() and len(next_line.split()) <= 6)):
+					section_end = newline_pos
+			sentence_end = cleaned.rfind('.', search_start, end)
+
 			if paragraph_end != -1:
 				end = paragraph_end + 2
+			elif section_end != -1:
+				end = section_end + 1
 			elif sentence_end != -1:
 				end = sentence_end + 1
 
@@ -305,47 +329,112 @@ def _split_text_chunks(text: str, chunk_size: int = 5500, overlap: int = 450, ma
 	return chunks
 
 
+def _call_gemini_model(
+	client,
+	model_name: str,
+	prompt: str,
+	temperature: float,
+	max_output_tokens: int,
+) -> Optional[str]:
+	"""Attempt a single Gemini API call with up to _MAX_TRANSIENT_RETRIES retries.
+
+	Returns the response text on success, None if the model should be skipped,
+	or raises an auth error to abort all model attempts.
+	"""
+	for attempt in range(_MAX_TRANSIENT_RETRIES + 1):
+		try:
+			response = client.models.generate_content(
+				model=model_name,
+				contents=prompt,
+				config={
+					'temperature': temperature,
+					'max_output_tokens': max_output_tokens,
+				},
+			)
+			return (getattr(response, 'text', '') or '').strip()
+		except Exception as exc:
+			if _is_auth_error(exc):
+				logger.warning('Gemini auth failed on model "%s": %s', model_name, exc)
+				_disable_gemini_for_process()
+				raise  # Propagate so the caller can abort all models.
+
+			if _is_model_not_found_error(exc):
+				logger.warning('Gemini model "%s" unavailable: %s. Skipping.', model_name, exc)
+				return None  # Signal: skip this model.
+
+			if _is_transient_error(exc) and attempt < _MAX_TRANSIENT_RETRIES:
+				backoff_seconds = 0.8 * (attempt + 1)
+				logger.warning(
+					'Gemini transient error on model "%s" (attempt %s/%s): %s. Retrying in %.1fs.',
+					model_name,
+					attempt + 1,
+					_MAX_TRANSIENT_RETRIES + 1,
+					exc,
+					backoff_seconds,
+				)
+				time.sleep(backoff_seconds)
+				continue
+
+			logger.warning('Gemini generation failed on model "%s": %s', model_name, exc)
+			return None  # Signal: skip this model.
+
+	return None
+
+
 def _generate_text(prompt: str, temperature: float = 0.2, max_output_tokens: int = 900) -> str:
+	"""Call Gemini with concurrent model fallbacks and per-call timeout.
+
+	All model candidates are submitted to a thread pool simultaneously.
+	The first successful non-empty response wins; remaining futures are
+	cancelled.  Each individual call is bounded by GEMINI_API_TIMEOUT_SECONDS.
+	"""
 	client = _get_new_sdk_client()
-	if client is not None:
-		for model_name in _get_gemini_model_candidates():
-			for attempt in range(_MAX_TRANSIENT_RETRIES + 1):
+	if client is None:
+		return ''
+
+	candidates = _get_gemini_model_candidates()
+	if not candidates:
+		return ''
+
+	# Submit all model calls concurrently.
+	with ThreadPoolExecutor(max_workers=len(candidates)) as pool:
+		future_to_model = {
+			pool.submit(
+				_call_gemini_model,
+				client,
+				model_name,
+				prompt,
+				temperature,
+				max_output_tokens,
+			): model_name
+			for model_name in candidates
+		}
+
+		try:
+			for future in as_completed(future_to_model, timeout=GEMINI_API_TIMEOUT_SECONDS * len(candidates)):
+				model_name = future_to_model[future]
 				try:
-					with _GEMINI_CALL_SEMAPHORE:
-						response = client.models.generate_content(
-							model=model_name,
-							contents=prompt,
-							config={
-								'temperature': temperature,
-								'max_output_tokens': max_output_tokens,
-							},
-						)
-					return (getattr(response, 'text', '') or '').strip()
+					result = future.result(timeout=GEMINI_API_TIMEOUT_SECONDS)
+					if result:  # Non-empty string = success.
+						# Cancel remaining in-flight calls.
+						for pending in future_to_model:
+							if pending is not future:
+								pending.cancel()
+						return result
+					# None or empty: this model failed/was skipped, try next.
 				except Exception as exc:
 					if _is_auth_error(exc):
-						logger.warning('Gemini new SDK auth failed: %s', exc)
-						_disable_gemini_for_process()
+						# Auth failure is fatal — abort everything.
+						for pending in future_to_model:
+							pending.cancel()
 						return ''
-
-					if _is_model_not_found_error(exc):
-						logger.warning('Gemini model "%s" unavailable: %s. Trying next model candidate.', model_name, exc)
-						break
-
-					if _is_transient_error(exc) and attempt < _MAX_TRANSIENT_RETRIES:
-						backoff_seconds = attempt + 1
-						logger.warning(
-							'Gemini temporarily unavailable on model "%s" (attempt %s/%s): %s. Retrying in %ss.',
-							model_name,
-							attempt + 1,
-							_MAX_TRANSIENT_RETRIES + 1,
-							exc,
-							backoff_seconds,
-						)
-						time.sleep(backoff_seconds)
-						continue
-
-					logger.warning('Gemini new SDK generation failed on model "%s": %s', model_name, exc)
-					break
+					logger.warning('Gemini model "%s" future raised: %s', model_name, exc)
+		except FuturesTimeoutError:
+			logger.warning(
+				'Gemini concurrent call timed out after %ss across %s model(s).',
+				GEMINI_API_TIMEOUT_SECONDS * len(candidates),
+				len(candidates),
+			)
 
 	return ''
 
@@ -729,162 +818,220 @@ def _build_structured_fallback(summary_text: str, mode: str) -> str:
 # ===== GEMINI API WRAPPER =====
 
 
-def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: str = 'detailed', source_context: str = '') -> str:
-	mode = (summary_mode or '').strip().lower()
-	if mode not in {'brief', 'standard', 'detailed'}:
-		mode = 'detailed'
+def _build_summary_prompt(mode: str, notes_context: str, source_context: str) -> str:
+	"""Build a rich, mode-specific summarization prompt."""
+	source_block = _summary_source_context_block(source_context)
 
-	chunks = _split_text_chunks(text, chunk_size=7000, overlap=300, max_chunks=4)
+	if mode == 'brief':
+		return (
+			"You are an expert educational summarizer. Create a BRIEF revision summary.\n\n"
+			"Output these three sections in order, each heading on its own line:\n"
+			"Quick Snapshot\n"
+			"Must-Know Facts\n"
+			"Immediate Takeaway\n\n"
+			"Section requirements:\n"
+			"- Quick Snapshot: 1-2 sentences capturing the core topic and its significance.\n"
+			"- Must-Know Facts: exactly 3-4 bullets, each a distinct high-value fact or definition.\n"
+			"- Immediate Takeaway: exactly 1 bullet — the single most important insight to remember.\n\n"
+			"Formatting rules:\n"
+			"- Plain text only; no markdown symbols (#, **, __, *, ~).\n"
+			"- Bullet lines start with '- '.\n"
+			"- Each heading on its own line with no colon or decoration.\n"
+			"- Total 90-160 words.\n"
+			"- Summarize only this file; do not blend content from other sources.\n\n"
+			f"{source_block}"
+			f"Source notes:\n{notes_context}"
+		)
+
+	if mode == 'standard':
+		return (
+			"You are an expert educational summarizer. Create a STANDARD study summary.\n\n"
+			"Output these four sections in order, each heading on its own line:\n"
+			"Overview\n"
+			"Key Concepts\n"
+			"Causal Links\n"
+			"Practical Applications\n\n"
+			"Section requirements:\n"
+			"- Overview: 2-3 sentences introducing the topic, scope, and main argument.\n"
+			"- Key Concepts: 5-7 bullets, each naming and briefly explaining a distinct concept.\n"
+			"- Causal Links: 2-3 bullets showing cause-effect relationships or dependencies between concepts.\n"
+			"- Practical Applications: 2-3 bullets describing how these concepts apply in real tasks or study scenarios.\n\n"
+			"Formatting rules:\n"
+			"- Plain text only; no markdown symbols (#, **, __, *, ~).\n"
+			"- Bullet lines start with '- '.\n"
+			"- Each heading on its own line with no colon or decoration.\n"
+			"- Total 220-330 words.\n"
+			"- Summarize only this file; do not blend content from other sources.\n\n"
+			f"{source_block}"
+			f"Source notes:\n{notes_context}"
+		)
+
+	# detailed
+	return (
+		"You are an expert educational summarizer. Create a DETAILED analytic summary.\n\n"
+		"Output these six sections in order, each heading on its own line:\n"
+		"Synthesis\n"
+		"Concept Architecture\n"
+		"Mechanisms and Dependencies\n"
+		"Critical Nuances\n"
+		"Applied Implications\n"
+		"Revision Checklist\n\n"
+		"Section requirements:\n"
+		"- Synthesis: 3-4 sentences integrating the whole topic — what it is, why it matters, and how the parts connect.\n"
+		"- Concept Architecture: 6-8 bullets organizing the main idea hierarchy from broad to specific.\n"
+		"- Mechanisms and Dependencies: 4-5 bullets explaining how individual elements cause, enable, or constrain each other.\n"
+		"- Critical Nuances: 3-4 bullets of important caveats, edge cases, assumptions, or common misconceptions.\n"
+		"- Applied Implications: 3-4 bullets of high-value practical interpretations for real-world or exam use.\n"
+		"- Revision Checklist: 4-5 concise bullets listing the key facts, terms, or relationships to memorize.\n\n"
+		"Formatting rules:\n"
+		"- Plain text only; no markdown symbols (#, **, __, *, ~).\n"
+		"- Bullet lines start with '- '.\n"
+		"- Each heading on its own line with no colon or decoration.\n"
+		"- Total 380-520 words.\n"
+		"- Summarize only this file; do not blend content from other sources.\n\n"
+		f"{source_block}"
+		f"Source notes:\n{notes_context}"
+	)
+
+
+def _build_notes_context_for_large_doc(text: str, mode: str) -> str:
+	"""For documents >DIRECT_SUMMARIZATION_CHAR_LIMIT, extract key notes from
+	semantic chunks in parallel, then join them as the notes context.
+
+	Returns the joined extracted notes, or falls back to a truncated version
+	of the original text if extraction yields nothing.
+	"""
+	chunks = _split_text_chunks(text)
 	if not chunks:
-		_set_last_summary_failure_reason('empty_input')
-		return local_summary
+		return ''
 
-	fast_path = len(text) > 12000
+	def _extract_chunk(index_chunk):
+		index, chunk = index_chunk
+		total = len(chunks)
+		map_prompt = (
+			f'Extract high-signal academic content from lecture notes (part {index}/{total}).\n'
+			'Focus on: key concepts, definitions, cause-effect relationships, and important facts.\n'
+			'Output format — use these labels exactly:\n'
+			'Key Concepts:\n- ...\n'
+			'Relationships:\n- ...\n'
+			'Important Facts:\n- ...\n'
+			'Rules:\n'
+			'- Only include information directly stated in this excerpt.\n'
+			'- Skip examples, anecdotes, and filler unless they define a concept.\n'
+			'- Write "- None" for any section with no valid content.\n'
+			'- No title or commentary outside the required sections.\n\n'
+			f'Excerpt:\n{chunk}'
+		)
+		return _generate_text(map_prompt, temperature=0.1, max_output_tokens=500)
 
 	extracted_notes: List[str] = []
-	# Use a map pass for medium/long notes to improve source coverage.
-	if len(text) > 9000 and len(chunks) > 1:
-		for index, chunk in enumerate(chunks, start=1):
-			map_prompt = (
-				f'You are an expert academic curator extracting high-signal content from lecture notes chunk {index}/{len(chunks)}.\n'
-				'Prioritize contextual relationships (cause-effect, dependencies, hierarchy), not isolated keyword lists.\n'
-				'Output strictly in this format:\n'
-				'Structural Markers:\n- ...\n'
-				'Thematic Clusters:\n- ...\n'
-				'Technical Anchors:\n- ...\n'
-				'Implications:\n- ...\n'
-				'Rules:\n'
-				'- Keep only information directly supported by this chunk.\n'
-				'- Explain how concepts connect when possible; do not only list topics.\n'
-				'- Omit examples, anecdotes, repetition, and filler text unless essential for understanding.\n'
-				'- If a section has no valid content, write "- None".\n'
-				'- Do not add a title or any commentary outside the required sections.\n\n'
-				f'Lecture notes chunk:\n{chunk}'
-			)
-			mapped = _generate_text(map_prompt, temperature=0.1, max_output_tokens=420)
-			if mapped:
-				extracted_notes.append(mapped)
+	with ThreadPoolExecutor(max_workers=min(len(chunks), 4)) as pool:
+		futures = {pool.submit(_extract_chunk, (i, c)): i for i, c in enumerate(chunks, start=1)}
+		# Collect in chunk order for coherent context.
+		ordered = sorted(futures.items(), key=lambda kv: kv[1])
+		for future, _ in ordered:
+			try:
+				result = future.result(timeout=GEMINI_API_TIMEOUT_SECONDS + 5)
+				if result:
+					extracted_notes.append(result)
+			except Exception as exc:
+				logger.warning('Chunk extraction failed: %s', exc)
 
 	notes_context = '\n\n'.join(extracted_notes).strip()
 	if not notes_context:
 		max_chars_by_mode = {'brief': 10000, 'standard': 13000, 'detailed': 15000}
-		notes_context = _summarization_context(text, max_chars_by_mode[mode])
+		notes_context = _summarization_context(text, max_chars_by_mode.get(mode, 15000))
+	return notes_context
 
-	if mode == 'brief':
-		prompt = (
-			"Create a BRIEF revision summary from the source notes.\n\n"
-			"Use these headings exactly:\n"
-			"Quick Snapshot\nMust-Know Facts\nImmediate Takeaway\n\n"
-			"Rules:\n"
-			"- Summarize only the current uploaded file; do not merge in content from other files.\n"
-			"- Total 90-160 words.\n"
-			"- Snapshot: 1-2 sentences only.\n"
-			"- Must-Know Facts: 3-4 concise bullets.\n"
-			"- Immediate Takeaway: exactly 1 bullet.\n"
-			"- Keep only source-supported information.\n\n"
-			"- Plain text only; do not use markdown symbols like #, **, or __.\n"
-			"- Put each heading on its own line.\n\n"
-			f"{_summary_source_context_block(source_context)}"
-			f"Source notes:\n{notes_context}"
+
+def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: str = 'detailed', source_context: str = '') -> str:
+	"""Generate a structured summary using direct summarization for most documents.
+
+	Documents under DIRECT_SUMMARIZATION_CHAR_LIMIT (~50k chars) are sent
+	directly to Gemini in a single call — no map-reduce overhead.  Larger
+	documents are chunked semantically and key notes are extracted in parallel
+	before the final summarization call.
+
+	Enrichment is only triggered when the initial output fails the quality
+	check, avoiding unnecessary extra API calls for good first-pass results.
+	"""
+	mode = (summary_mode or '').strip().lower()
+	if mode not in {'brief', 'standard', 'detailed'}:
+		mode = 'detailed'
+
+	cleaned_text = (text or '').strip()
+	if not cleaned_text:
+		_set_last_summary_failure_reason('empty_input')
+		return local_summary
+
+	# --- Build notes context ---
+	# For short/medium documents Gemini handles the full text natively.
+	# Only chunk very large documents to stay within context limits.
+	is_large_doc = len(cleaned_text) > DIRECT_SUMMARIZATION_CHAR_LIMIT
+	if is_large_doc:
+		logger.info(
+			'generate_gemini_summary: large doc (%d chars) — using parallel chunk extraction.',
+			len(cleaned_text),
 		)
-	elif mode == 'standard':
-		prompt = (
-			"Create a STANDARD study summary from the source notes.\n\n"
-			"Use these headings exactly:\n"
-			"Overview\nKey Concepts\nCausal Links\nPractical Applications\n\n"
-			"Rules:\n"
-			"- Summarize only the current uploaded file; do not merge in content from other files.\n"
-			"- Total 220-330 words.\n"
-			"- Overview: 2-3 sentences.\n"
-			"- Key Concepts: 5-7 bullets with distinct ideas.\n"
-			"- Causal Links: 2-3 bullets showing relationships or dependencies.\n"
-			"- Practical Applications: 2-3 bullets for use in real tasks/study.\n"
-			"- Keep only source-supported information.\n\n"
-			"- Plain text only; do not use markdown symbols like #, **, or __.\n"
-			"- Put each heading on its own line.\n\n"
-			f"{_summary_source_context_block(source_context)}"
-			f"Source notes:\n{notes_context}"
-		)
+		notes_context = _build_notes_context_for_large_doc(cleaned_text, mode)
 	else:
-		prompt = (
-			"Create a DETAILED analytic summary from the source notes.\n\n"
-			"Use these headings exactly:\n"
-			"Synthesis\nConcept Architecture\nMechanisms and Dependencies\nCritical Nuances\nApplied Implications\nRevision Checklist\n\n"
-			"Rules:\n"
-			"- Summarize only the current uploaded file; do not merge in content from other files.\n"
-			"- Total 380-520 words.\n"
-			"- Synthesis: 3-4 sentences integrating the whole topic.\n"
-			"- Concept Architecture: 6-8 bullets organizing the main idea hierarchy.\n"
-			"- Mechanisms and Dependencies: 4-5 bullets explaining how elements affect each other.\n"
-			"- Critical Nuances: 3-4 bullets of caveats, boundaries, or assumptions.\n"
-			"- Applied Implications: 3-4 bullets of high-value practical interpretation.\n"
-			"- Revision Checklist: 4-5 concise bullets for exam/study review.\n"
-			"- Keep only source-supported information.\n\n"
-			"- Plain text only; do not use markdown symbols like #, **, or __.\n"
-			"- Put each heading on its own line.\n\n"
-			f"{_summary_source_context_block(source_context)}"
-			f"Source notes:\n{notes_context}"
-		)
+		max_chars_by_mode = {'brief': 10000, 'standard': 13000, 'detailed': 15000}
+		notes_context = _summarization_context(cleaned_text, max_chars_by_mode.get(mode, 15000))
 
-	tokens_by_mode = {
-		'brief': 520,
-		'standard': 900,
-		'detailed': 1300,
-	}
-	refined = _generate_text(prompt, temperature=0.2 if mode == 'brief' else 0.22, max_output_tokens=tokens_by_mode.get(mode, 900))
+	if not notes_context:
+		_set_last_summary_failure_reason('empty_input')
+		return local_summary
+
+	# --- Primary summarization call ---
+	prompt = _build_summary_prompt(mode, notes_context, source_context)
+	tokens_by_mode = {'brief': 520, 'standard': 900, 'detailed': 1300}
+	refined = _generate_text(
+		prompt,
+		temperature=0.2 if mode == 'brief' else 0.22,
+		max_output_tokens=tokens_by_mode.get(mode, 900),
+	)
 	refined = _dedupe_bullets(refined)
 	refined = _finalize_summary_text(refined)
 	refined = _polish_summary_text(refined, mode)
-	if not fast_path:
-		refined = _enrich_summary_coverage(refined, notes_context, mode, source_context=source_context)
+
+	# --- Quality check: only enrich if the first pass falls short ---
 	if _is_valid_summary_structure(refined, mode):
 		_set_last_summary_failure_reason('none')
 		return refined
 
+	# Enrichment pass (skipped when structure already passes).
 	if refined:
-		if fast_path:
-			salvaged = _build_structured_fallback(refined, mode)
-			salvaged = _dedupe_bullets(salvaged)
-			salvaged = _finalize_summary_text(salvaged)
-			salvaged = _polish_summary_text(salvaged, mode)
-			salvaged = _enrich_summary_coverage(salvaged, notes_context, mode, source_context=source_context)
-			if salvaged.strip():
-				_set_last_summary_failure_reason('structure_salvaged')
-				return salvaged.strip()
+		refined = _enrich_summary_coverage(refined, notes_context, mode, source_context=source_context)
+		if _is_valid_summary_structure(refined, mode):
+			_set_last_summary_failure_reason('none')
+			return refined
 
+	# --- Repair pass ---
+	if refined:
 		repair_prompt = _build_summary_repair_prompt(mode, refined, notes_context, local_summary, source_context=source_context)
 		repair_tokens = 520 if mode == 'brief' else (900 if mode == 'standard' else 1300)
 		repaired = _generate_text(repair_prompt, temperature=0.2, max_output_tokens=repair_tokens)
 		repaired = _dedupe_bullets(repaired)
 		repaired = _finalize_summary_text(repaired)
 		repaired = _polish_summary_text(repaired, mode)
-		if not fast_path:
-			repaired = _enrich_summary_coverage(repaired, notes_context, mode, source_context=source_context)
 		if _is_valid_summary_structure(repaired, mode):
 			_set_last_summary_failure_reason('none')
 			return repaired
 
-		# If Gemini returned content but structure checks failed, salvage it instead of
-		# returning empty and triggering unnecessary retries.
+		# Salvage whatever content we have rather than returning empty.
 		salvage_source = repaired or refined
 		salvaged = _build_structured_fallback(salvage_source, mode)
 		salvaged = _dedupe_bullets(salvaged)
 		salvaged = _finalize_summary_text(salvaged)
 		salvaged = _polish_summary_text(salvaged, mode)
-		if not fast_path:
-			salvaged = _enrich_summary_coverage(salvaged, notes_context, mode, source_context=source_context)
 		if salvaged.strip():
 			_set_last_summary_failure_reason('structure_salvaged')
 			return salvaged.strip()
 
-		if repaired:
-			_set_last_summary_failure_reason('structure_validation_failed')
-		else:
-			_set_last_summary_failure_reason('repair_empty_response')
+		_set_last_summary_failure_reason('repair_empty_response' if not repaired else 'structure_validation_failed')
 		return ''
 
 	_set_last_summary_failure_reason('empty_model_response')
-
 	return ''
 
 
