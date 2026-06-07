@@ -132,7 +132,19 @@ def _get_recent_pending_materials(user, classroom):
 
 
 def _persist_failed_summary(material, error_text: str) -> None:
-    # Never overwrite a summary the educator has already archived or deleted.
+    # Never overwrite a summary the educator has explicitly deleted.
+    user_deleted = SummaryValidation.objects.filter(
+        Lecture=material,
+        QualityStatus='user_deleted',
+    ).exists()
+    if user_deleted:
+        _trace_ai(
+            f'⏭️ AI Failure Persistence Skipped: material_id={material.pk} '
+            'was explicitly deleted by the educator — will not write failure record.'
+        )
+        return
+
+    # Never overwrite a summary the educator has already archived.
     existing = Summary.objects.filter(Lecture=material).first()
     if existing is not None and existing.IsArchived:
         _trace_ai(
@@ -198,13 +210,29 @@ def _process_material_ai(material_pk, educator_pk, summary_mode='detailed', uplo
     try:
         material = LectureMaterial.objects.get(pk=material_pk)
 
+        # If the educator has explicitly deleted the summary for this lecture,
+        # a SummaryValidation tombstone with QualityStatus='user_deleted' will
+        # exist (written by delete_archived_summary before the physical delete).
+        # Honour that intent and skip summary creation entirely so a stale
+        # background job cannot resurrect a summary the user chose to remove.
+        user_deleted = SummaryValidation.objects.filter(
+            Lecture=material,
+            QualityStatus='user_deleted',
+        ).exists()
+        if user_deleted:
+            _trace_ai(
+                f'\u23ed\ufe0f AI Analysis Skipped: material_id={material_pk} was explicitly deleted by the '
+                'educator \u2014 will not recreate summary to respect user\u2019s delete action.'
+            )
+            return
+
         # If the educator has already archived (or had archived) a summary for this
         # lecture, do not regenerate it — respect the user's explicit action.
         existing_summary = Summary.objects.filter(Lecture=material).first()
         if existing_summary is not None and existing_summary.IsArchived:
             _trace_ai(
-                f'⏭️ AI Analysis Skipped: material_id={material_pk} already has an archived summary '
-                '— will not regenerate to respect educator\'s archive action.'
+                f'\u23ed\ufe0f AI Analysis Skipped: material_id={material_pk} already has an archived summary '
+                '\u2014 will not regenerate to respect educator\'s archive action.'
             )
             return
 
@@ -347,7 +375,8 @@ def educator_dashboard(request):
         Lecture__UploadedBy=request.user,
         Lecture__Classroom=selected_classroom,
         IsArchived=True,
-    ).select_related('Lecture').order_by('-ArchivedAt', '-CreatedAt')
+    ).exclude(validation__QualityStatus='user_deleted').select_related('Lecture').order_by('-ArchivedAt', '-CreatedAt')
+
     pending_count = _get_recent_pending_materials(request.user, selected_classroom).count()
     summary_count = active_summaries.count()
     archived_count = archived_summaries.count()
@@ -388,7 +417,8 @@ def ai_processing_status(request):
         Lecture__UploadedBy=request.user,
         Lecture__Classroom=selected_classroom,
         IsArchived=True,
-    ).select_related('Lecture').order_by('-ArchivedAt', '-CreatedAt')
+    ).exclude(validation__QualityStatus='user_deleted').select_related('Lecture').order_by('-ArchivedAt', '-CreatedAt')
+
     summary_count = active_summaries.count()
     archived_count = archived_summaries.count()
     summaries_html = render_to_string(
@@ -552,8 +582,31 @@ def delete_archived_summary(request, summary_id):
     )
 
     lecture_title = summary.Lecture.Title
-    summary.delete()
-    messages.success(request, f'Summary for "{lecture_title}" was permanently deleted.')
+    lecture = summary.Lecture
+
+    # Mark the summary as user-deleted via a SummaryValidation tombstone so that
+    # any still-running background AI job can detect the deletion and skip
+    # recreating the summary (see _process_material_ai).  The Summary row itself
+    # is kept as an archived tombstone — it is invisible to all dashboard queries
+    # that filter on IsArchived=False, so the educator never sees it again.
+    SummaryValidation.objects.update_or_create(
+        Summary=summary,
+        defaults={
+            'Lecture': lecture,
+            'SummaryTextSnapshot': '',
+            'IsVerified': False,
+            'QualityScore': 0,
+            'QualityStatus': 'user_deleted',
+            'QualityMetrics': {},
+            'VerifiedBy': None,
+        },
+    )
+    _trace_ai(
+        f'\U0001f5d1\ufe0f Summary User-Deleted: material_id={lecture.pk} \u2014 tombstone written, '
+        'background AI jobs will skip summary creation for this lecture.'
+    )
+
+    messages.success(request, f'Summary for \"{lecture_title}\" was permanently deleted.')
     return redirect('content:educator_dashboard')
 
 
