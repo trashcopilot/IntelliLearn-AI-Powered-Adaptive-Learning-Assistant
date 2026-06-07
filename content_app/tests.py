@@ -1,3 +1,6 @@
+from unittest.mock import patch
+
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 
@@ -91,3 +94,36 @@ class EducatorClassroomGateTests(TestCase):
 
         dashboard_response = self.client.get(reverse('content:educator_dashboard'))
         self.assertRedirects(dashboard_response, reverse('content:educator_classrooms'), fetch_redirect_response=False)
+
+    @patch('content_app.views.run_background')
+    def test_multi_file_upload_queues_one_batch_job(self, mock_run_background):
+        self.client.force_login(self.educator)
+        session = self.client.session
+        session['educator_active_classroom_id'] = self.class_a.ClassroomID
+        session.save()
+
+        upload_one = SimpleUploadedFile('alpha.txt', b'alpha notes', content_type='text/plain')
+        upload_two = SimpleUploadedFile('beta.txt', b'beta notes', content_type='text/plain')
+
+        response = self.client.post(
+            reverse('content:educator_dashboard'),
+            {
+                'Title': 'Batch Lecture',
+                'SummaryMode': 'brief',
+                'UploadFile': [upload_one, upload_two],
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(mock_run_background.call_count, 1)
+
+        task, created_material_pks, educator_pk, summary_mode = mock_run_background.call_args.args
+        self.assertEqual(task.__name__, '_process_material_ai_batch')
+        self.assertEqual(educator_pk, self.educator.pk)
+        self.assertEqual(summary_mode, 'brief')
+
+        uploaded_materials = list(
+            LectureMaterial.objects.filter(UploadedBy=self.educator, Classroom=self.class_a).order_by('pk').values_list('pk', flat=True)
+        )
+        self.assertEqual(created_material_pks, uploaded_materials[-2:])
+        self.assertEqual(len(created_material_pks), 2)

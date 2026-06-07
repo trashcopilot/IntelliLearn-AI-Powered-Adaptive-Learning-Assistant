@@ -735,10 +735,12 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 	if mode not in {'brief', 'standard', 'detailed'}:
 		mode = 'detailed'
 
-	chunks = _split_text_chunks(text, max_chunks=5)
+	chunks = _split_text_chunks(text, chunk_size=7000, overlap=300, max_chunks=4)
 	if not chunks:
 		_set_last_summary_failure_reason('empty_input')
 		return local_summary
+
+	fast_path = len(text) > 12000
 
 	extracted_notes: List[str] = []
 	# Use a map pass for medium/long notes to improve source coverage.
@@ -834,19 +836,31 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 	refined = _dedupe_bullets(refined)
 	refined = _finalize_summary_text(refined)
 	refined = _polish_summary_text(refined, mode)
-	refined = _enrich_summary_coverage(refined, notes_context, mode, source_context=source_context)
+	if not fast_path:
+		refined = _enrich_summary_coverage(refined, notes_context, mode, source_context=source_context)
 	if _is_valid_summary_structure(refined, mode):
 		_set_last_summary_failure_reason('none')
 		return refined
 
 	if refined:
+		if fast_path:
+			salvaged = _build_structured_fallback(refined, mode)
+			salvaged = _dedupe_bullets(salvaged)
+			salvaged = _finalize_summary_text(salvaged)
+			salvaged = _polish_summary_text(salvaged, mode)
+			salvaged = _enrich_summary_coverage(salvaged, notes_context, mode, source_context=source_context)
+			if salvaged.strip():
+				_set_last_summary_failure_reason('structure_salvaged')
+				return salvaged.strip()
+
 		repair_prompt = _build_summary_repair_prompt(mode, refined, notes_context, local_summary, source_context=source_context)
 		repair_tokens = 520 if mode == 'brief' else (900 if mode == 'standard' else 1300)
 		repaired = _generate_text(repair_prompt, temperature=0.2, max_output_tokens=repair_tokens)
 		repaired = _dedupe_bullets(repaired)
 		repaired = _finalize_summary_text(repaired)
 		repaired = _polish_summary_text(repaired, mode)
-		repaired = _enrich_summary_coverage(repaired, notes_context, mode, source_context=source_context)
+		if not fast_path:
+			repaired = _enrich_summary_coverage(repaired, notes_context, mode, source_context=source_context)
 		if _is_valid_summary_structure(repaired, mode):
 			_set_last_summary_failure_reason('none')
 			return repaired
@@ -858,7 +872,8 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 		salvaged = _dedupe_bullets(salvaged)
 		salvaged = _finalize_summary_text(salvaged)
 		salvaged = _polish_summary_text(salvaged, mode)
-		salvaged = _enrich_summary_coverage(salvaged, notes_context, mode, source_context=source_context)
+		if not fast_path:
+			salvaged = _enrich_summary_coverage(salvaged, notes_context, mode, source_context=source_context)
 		if salvaged.strip():
 			_set_last_summary_failure_reason('structure_salvaged')
 			return salvaged.strip()

@@ -259,6 +259,18 @@ def _process_material_ai(material_pk, educator_pk, summary_mode='detailed', uplo
         raise
 
 
+def _process_material_ai_batch(material_pks, educator_pk, summary_mode='detailed'):
+    total = len(material_pks)
+    for upload_index, material_pk in enumerate(material_pks, start=1):
+        try:
+            _process_material_ai(material_pk, educator_pk, summary_mode, upload_index, total)
+        except Exception as exc:
+            _trace_ai(
+                f'❌ AI Batch Item Failure: material_id={material_pk}, '
+                f'position={upload_index}/{total}, error={exc}'
+            )
+
+
 @login_required
 def educator_dashboard(request):
     if not request.user.is_educator():
@@ -278,8 +290,9 @@ def educator_dashboard(request):
             base_title = form.cleaned_data['Title'].strip()
             uploaded_files = form.cleaned_data['UploadFile']
             created_count = 0
+            created_material_pks = []
 
-            for file_index, uploaded in enumerate(uploaded_files, start=1):
+            for uploaded in uploaded_files:
                 file_data = uploaded.read()
                 material_title = base_title
                 if len(uploaded_files) > 1:
@@ -299,23 +312,25 @@ def educator_dashboard(request):
                     UploadedBy=request.user,
                     Classroom=selected_classroom,
                 )
+                created_material_pks.append(material.pk)
 
-                run_background(_process_material_ai, material.pk, request.user.pk, summary_mode, file_index, len(uploaded_files))
                 created_count += 1
+
+            run_background(_process_material_ai_batch, created_material_pks, request.user.pk, summary_mode)
 
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse(
                     {
                         'created_count': created_count,
                         'summary_mode': summary_mode,
-                        'detail': f'{created_count} lecture material(s) uploaded. AI summary processing started in {summary_mode} mode for each file.',
+                        'detail': f'{created_count} lecture material(s) uploaded. AI summary processing started in {summary_mode} mode for this batch.',
                         'redirect_url': request.path,
                     }
                 )
 
             messages.success(
                 request,
-                f'{created_count} lecture material(s) uploaded. AI summary processing started in {summary_mode} mode for each file. Quiz questions will be generated when you publish the quiz.',
+                f'{created_count} lecture material(s) uploaded. AI summary processing started in {summary_mode} mode for this batch. Quiz questions will be generated when you publish the quiz.',
             )
             return redirect('content:educator_dashboard')
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
