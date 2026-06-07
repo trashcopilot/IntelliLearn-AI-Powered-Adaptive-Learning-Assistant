@@ -25,7 +25,11 @@ from .ai_models import (
 logger = logging.getLogger(__name__)
 
 _VALID_SUMMARY_MODES = {'brief', 'standard', 'detailed'}
-_GEMINI_PRIMARY_ATTEMPTS = max(1, int(os.getenv('GEMINI_PRIMARY_ATTEMPTS', '2')))
+# Each "attempt" now fans out to all Gemini model candidates concurrently, so
+# fewer outer retries are needed.  Default reduced from 2 to 1 since the
+# concurrent model fallback in _generate_text already handles rate-limit
+# failures across models within a single call.
+_GEMINI_PRIMARY_ATTEMPTS = max(1, int(os.getenv('GEMINI_PRIMARY_ATTEMPTS', '1')))
 _GEMINI_PRIMARY_RETRY_DELAY = float(os.getenv('GEMINI_PRIMARY_RETRY_DELAY', '0.8'))
 _LOCAL_FALLBACK_ATTEMPTS = max(1, int(os.getenv('LOCAL_FALLBACK_ATTEMPTS', '1')))
 _LOCAL_FALLBACK_RETRY_DELAY = float(os.getenv('LOCAL_FALLBACK_RETRY_DELAY', '0.5'))
@@ -146,7 +150,10 @@ def summarize_text(text: str, summary_mode: str = 'detailed', source_context: st
 		return ''
 
 	mode = _normalize_summary_mode(summary_mode)
-	_trace_ai(f'🚀 AI Summary Started: mode={mode}, chars={len(text)}')
+	_trace_ai(
+		f'🚀 AI Summary Started: mode={mode}, chars={len(text)} '
+		f'(concurrent multi-model Gemini, direct summarization for docs <50k chars)'
+	)
 
 	refined = _run_gemini_primary('AI Summary', lambda: generate_gemini_summary(text, summary_mode=mode, source_context=source_context))
 	if refined and refined.strip():
