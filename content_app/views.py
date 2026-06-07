@@ -52,14 +52,20 @@ def _resolve_question_generation_source(lecture):
     summary_text = ''
     quality_score = 0.0
 
-    if hasattr(lecture, 'summary') and lecture.summary and not lecture.summary.IsArchived:
-        summary_text = (lecture.summary.SummaryText or '').strip()
-        validation = getattr(lecture.summary, 'validation', None)
+    lecture_summary = getattr(lecture, 'summary', None)
+    if lecture_summary is not None and not lecture_summary.IsArchived:
+        summary_text = (lecture_summary.SummaryText or '').strip()
+        validation = getattr(lecture_summary, 'validation', None)
         if validation is not None:
             try:
                 quality_score = float(validation.QualityScore or 0)
             except (TypeError, ValueError):
                 quality_score = 0.0
+    elif lecture_summary is not None and lecture_summary.IsArchived:
+        _trace_ai(
+            f'⏭️ Quiz Source: Skipping archived summary for lecture_id={lecture.pk}; '
+            'falling back to raw material text.'
+        )
 
     has_summary_signal = (
         len(summary_text) >= MIN_QUESTION_SOURCE_SUMMARY_CHARS
@@ -126,6 +132,15 @@ def _get_recent_pending_materials(user, classroom):
 
 
 def _persist_failed_summary(material, error_text: str) -> None:
+    # Never overwrite a summary the educator has already archived or deleted.
+    existing = Summary.objects.filter(Lecture=material).first()
+    if existing is not None and existing.IsArchived:
+        _trace_ai(
+            f'⏭️ AI Failure Persistence Skipped: material_id={material.pk} '
+            'has an archived summary — will not overwrite with failure record.'
+        )
+        return
+
     failure_text = (
         'AI processing failed for this lecture. '
         'Please edit the summary manually or re-upload to retry generation.'
@@ -182,6 +197,17 @@ def _get_selected_educator_classroom(request):
 def _process_material_ai(material_pk, educator_pk, summary_mode='detailed', upload_index=None, upload_total=None):
     try:
         material = LectureMaterial.objects.get(pk=material_pk)
+
+        # If the educator has already archived (or had archived) a summary for this
+        # lecture, do not regenerate it — respect the user's explicit action.
+        existing_summary = Summary.objects.filter(Lecture=material).first()
+        if existing_summary is not None and existing_summary.IsArchived:
+            _trace_ai(
+                f'⏭️ AI Analysis Skipped: material_id={material_pk} already has an archived summary '
+                '— will not regenerate to respect educator\'s archive action.'
+            )
+            return
+
         _trace_ai(f'🚀 AI Analysis Started: material_id={material_pk}, title="{material.Title}", mode={summary_mode}')
         raw_text = _extract_material_text(material)
         _trace_ai(f'📄 AI Text Extracted: material_id={material_pk}, chars={len(raw_text)}')
@@ -198,9 +224,12 @@ def _process_material_ai(material_pk, educator_pk, summary_mode='detailed', uplo
         source_context = '\n'.join(source_context_parts)
         summary_text = summarize_text(raw_text, summary_mode=summary_mode, source_context=source_context)
         quality = evaluate_summary_quality(summary_text, raw_text, mode=summary_mode)
+        # Use create_defaults so IsArchived=False is only applied on creation and
+        # never written back to an existing record, preserving any archived state.
         summary, _ = Summary.objects.update_or_create(
             Lecture=material,
             defaults={'SummaryText': summary_text, 'IsVerified': False},
+            create_defaults={'SummaryText': summary_text, 'IsVerified': False, 'IsArchived': False},
         )
         SummaryValidation.objects.update_or_create(
             Summary=summary,
