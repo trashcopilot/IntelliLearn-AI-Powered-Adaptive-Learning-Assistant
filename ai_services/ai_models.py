@@ -3,7 +3,7 @@ import json
 import os
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from functools import lru_cache
 from typing import Dict, List, Optional
 from urllib import error as urllib_error
@@ -11,10 +11,10 @@ from urllib import request as urllib_request
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_NAME = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash')
+DEFAULT_MODEL_NAME = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
 GEMINI_MODEL_FALLBACKS = os.getenv(
 	'GEMINI_MODEL_FALLBACKS',
-	'gemini-3.1-pro,gemini-3-flash,gemini-2.5-pro,gemini-2.5-flash',
+	'gemini-2.5-pro,gemini-2.5-flash-lite',
 )
 LOCAL_FALLBACK_MODEL = os.getenv('LOCAL_FALLBACK_MODEL', 'google/flan-t5-base')
 LOCAL_FALLBACK_URL = os.getenv('LOCAL_FALLBACK_URL', 'http://localhost:11434/api/generate')
@@ -382,11 +382,10 @@ def _call_gemini_model(
 
 
 def _generate_text(prompt: str, temperature: float = 0.2, max_output_tokens: int = 900) -> str:
-	"""Call Gemini with concurrent model fallbacks and per-call timeout.
+	"""Call Gemini with ordered model fallbacks and per-call timeout.
 
-	All model candidates are submitted to a thread pool simultaneously.
-	The first successful non-empty response wins; remaining futures are
-	cancelled.  Each individual call is bounded by GEMINI_API_TIMEOUT_SECONDS.
+	Models are tried in preference order so a slower or rate-limited primary
+	model does not trigger avoidable parallel load on the API.
 	"""
 	client = _get_new_sdk_client()
 	if client is None:
@@ -396,45 +395,35 @@ def _generate_text(prompt: str, temperature: float = 0.2, max_output_tokens: int
 	if not candidates:
 		return ''
 
-	# Submit all model calls concurrently.
-	with ThreadPoolExecutor(max_workers=len(candidates)) as pool:
-		future_to_model = {
-			pool.submit(
+	for model_name in candidates:
+		with ThreadPoolExecutor(max_workers=1) as pool:
+			future = pool.submit(
 				_call_gemini_model,
 				client,
 				model_name,
 				prompt,
 				temperature,
 				max_output_tokens,
-			): model_name
-			for model_name in candidates
-		}
-
-		try:
-			for future in as_completed(future_to_model, timeout=GEMINI_API_TIMEOUT_SECONDS * len(candidates)):
-				model_name = future_to_model[future]
-				try:
-					result = future.result(timeout=GEMINI_API_TIMEOUT_SECONDS)
-					if result:  # Non-empty string = success.
-						# Cancel remaining in-flight calls.
-						for pending in future_to_model:
-							if pending is not future:
-								pending.cancel()
-						return result
-					# None or empty: this model failed/was skipped, try next.
-				except Exception as exc:
-					if _is_auth_error(exc):
-						# Auth failure is fatal — abort everything.
-						for pending in future_to_model:
-							pending.cancel()
-						return ''
-					logger.warning('Gemini model "%s" future raised: %s', model_name, exc)
-		except FuturesTimeoutError:
-			logger.warning(
-				'Gemini concurrent call timed out after %ss across %s model(s).',
-				GEMINI_API_TIMEOUT_SECONDS * len(candidates),
-				len(candidates),
 			)
+
+			try:
+				result = future.result(timeout=GEMINI_API_TIMEOUT_SECONDS)
+			except FuturesTimeoutError:
+				logger.warning(
+					'Gemini model "%s" timed out after %ss. Trying next fallback.',
+					model_name,
+					GEMINI_API_TIMEOUT_SECONDS,
+				)
+				future.cancel()
+				continue
+			except Exception as exc:
+				if _is_auth_error(exc):
+					return ''
+				logger.warning('Gemini model "%s" raised: %s', model_name, exc)
+				continue
+
+			if result:
+				return result
 
 	return ''
 

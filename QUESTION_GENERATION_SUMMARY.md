@@ -6,7 +6,7 @@
 Questions are **AI-generated** when an educator publishes a quiz from a lecture material. The system supports two generation strategies:
 
 1. **Primary: Gemini API** (Google Generative AI)
-    - Model: `gemini-3.5-flash` (configurable via `GEMINI_MODEL`)
+    - Model: `gemini-2.5-flash` (configurable via `GEMINI_MODEL`)
    - Configurable via `GEMINI_API_KEY` environment variable
    - Supports retry logic: `GEMINI_PRIMARY_ATTEMPTS` (default: 2) with `GEMINI_PRIMARY_RETRY_DELAY` (default: 0.8s)
 
@@ -423,7 +423,7 @@ def _next_difficulty(current_level, is_correct):
 
 ### Gemini Configuration
 - `GEMINI_API_KEY`: Required to enable Gemini (if missing, uses local fallback)
-- `GEMINI_MODEL`: Model name (default: `gemini-3.5-flash`)
+- `GEMINI_MODEL`: Model name (default: `gemini-2.5-flash`)
 - `GEMINI_PRIMARY_ATTEMPTS`: Retry count (default: 2)
 - `GEMINI_PRIMARY_RETRY_DELAY`: Seconds between retries (default: 0.8)
 
