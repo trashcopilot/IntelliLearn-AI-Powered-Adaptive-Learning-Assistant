@@ -650,17 +650,17 @@ def _build_summary_enrichment_prompt(mode: str, current_summary: str, notes_cont
 	if mode == 'brief':
 		shape = (
 			'Use these sections exactly: Quick Snapshot, Must-Know Facts, Immediate Takeaway. '
-			'Include 1 compact snapshot paragraph, 3-4 fact bullets, and 1 takeaway bullet.'
+			'Include 1 compact snapshot paragraph, 3-4 fact bullets, and 1 takeaway bullet. Keep total length at 90-160 words.'
 		)
 	elif mode == 'standard':
 		shape = (
 			'Use these sections exactly: Overview, Key Concepts, Causal Links, Practical Applications. '
-			'Include 1 short overview paragraph, 5-7 concept bullets, 2-3 causal-link bullets, and 2-3 application bullets.'
+			'Include 1 short overview paragraph, 5-7 concept bullets, 2-3 causal-link bullets, and 2-3 application bullets. Keep total length at 220-330 words.'
 		)
 	else:
 		shape = (
 			'Use these sections exactly: Synthesis, Concept Architecture, Mechanisms and Dependencies, Critical Nuances, '
-			'Applied Implications, Revision Checklist. '
+			'Applied Implications, Revision Checklist. Keep total length at 380-520 words. '
 			'Provide specific, non-overlapping bullets with enough technical depth.'
 		)
 
@@ -669,9 +669,13 @@ def _build_summary_enrichment_prompt(mode: str, current_summary: str, notes_cont
 		'Rules:\n'
 		'- Summarize only the current uploaded file; do not merge in content from other files.\n'
 		'- Keep only source-supported facts.\n'
+		'- If a point is uncertain or not explicit in the notes, omit it.\n'
 		'- Remove repeated ideas across sections.\n'
+		'- Each bullet must add a distinct new point.\n'
 		'- Prefer diverse key points over restating one sentence.\n'
 		'- Keep it concise and readable.\n'
+		'- Plain text only; no markdown symbols (#, **, __, *, ~).\n'
+		'- Bullet lines must start with "- ".\n'
 		'- Do not add commentary outside the summary.\n'
 		f'- Structure: {shape}\n\n'
 		f'{_summary_source_context_block(source_context)}'
@@ -745,18 +749,18 @@ def _build_summary_repair_prompt(mode: str, broken_summary: str, notes_context: 
 	if mode == 'brief':
 		format_rules = (
 			'Use exactly these headings: Quick Snapshot, Must-Know Facts, Immediate Takeaway. '
-			'Keep total length short and high-signal.'
+			'Keep total length at 90-160 words with 3-4 Must-Know bullets and 1 Immediate Takeaway bullet.'
 		)
 	elif mode == 'standard':
 		format_rules = (
 			'Use exactly these headings: Overview, Key Concepts, Causal Links, Practical Applications. '
-			'Balance clarity and depth for study use.'
+			'Keep total length at 220-330 words with 5-7 Key Concepts bullets, 2-3 Causal Links bullets, and 2-3 Practical Applications bullets.'
 		)
 	else:
 		format_rules = (
 			'Use exactly these headings: Synthesis, Concept Architecture, Mechanisms and Dependencies, '
 			'Critical Nuances, Applied Implications, Revision Checklist. '
-			'Provide technically rich, non-redundant points.'
+			'Keep total length at 380-520 words and provide technically rich, non-redundant points.'
 		)
 
 	compact_notes = _summarization_context(notes_context, 10000)
@@ -764,6 +768,9 @@ def _build_summary_repair_prompt(mode: str, broken_summary: str, notes_context: 
 		'Repair the summary so it is systematic, concise, and well-structured.\n'
 		f'Formatting rules: {format_rules}\n'
 		'Content rules: keep only high-signal, source-supported facts; remove filler, repetition, and unnecessary detail.\n'
+		'If a claim is not clearly present in the source notes, omit it.\n'
+		'Each bullet must introduce a distinct idea.\n'
+		'Plain text only; bullets start with "- ".\n'
 		'Do not add any title or commentary.\n\n'
 		f'{_summary_source_context_block(source_context)}'
 		f'Source notes:\n{compact_notes}\n\n'
@@ -825,6 +832,12 @@ def _build_summary_prompt(mode: str, notes_context: str, source_context: str) ->
 	if mode == 'brief':
 		return (
 			"You are an expert educational summarizer. Create a BRIEF revision summary.\n\n"
+			"Global rules:\n"
+			"- Summarize only the provided notes.\n"
+			"- Use only source-supported facts; do not invent details.\n"
+			"- If a point is uncertain or missing from the notes, omit it.\n"
+			"- Do not repeat the same idea across sections.\n"
+			"- Each bullet must add a distinct new point.\n\n"
 			"Output these three sections in order, each heading on its own line:\n"
 			"Quick Snapshot\n"
 			"Must-Know Facts\n"
@@ -846,6 +859,12 @@ def _build_summary_prompt(mode: str, notes_context: str, source_context: str) ->
 	if mode == 'standard':
 		return (
 			"You are an expert educational summarizer. Create a STANDARD study summary.\n\n"
+			"Global rules:\n"
+			"- Summarize only the provided notes.\n"
+			"- Use only source-supported facts; do not invent details.\n"
+			"- If a point is uncertain or missing from the notes, omit it.\n"
+			"- Do not repeat the same idea across sections.\n"
+			"- Each bullet must add a distinct new point.\n\n"
 			"Output these four sections in order, each heading on its own line:\n"
 			"Overview\n"
 			"Key Concepts\n"
@@ -869,6 +888,12 @@ def _build_summary_prompt(mode: str, notes_context: str, source_context: str) ->
 	# detailed
 	return (
 		"You are an expert educational summarizer. Create a DETAILED analytic summary.\n\n"
+		"Global rules:\n"
+		"- Summarize only the provided notes.\n"
+		"- Use only source-supported facts; do not invent details.\n"
+		"- If a point is uncertain or missing from the notes, omit it.\n"
+		"- Do not repeat the same idea across sections.\n"
+		"- Each bullet must add a distinct new point.\n\n"
 		"Output these six sections in order, each heading on its own line:\n"
 		"Synthesis\n"
 		"Concept Architecture\n"
