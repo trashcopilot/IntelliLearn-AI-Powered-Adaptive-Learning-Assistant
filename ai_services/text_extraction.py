@@ -26,7 +26,7 @@ _PDF_TEXT_MIN_WORDS = int(os.getenv('PDF_TEXT_MIN_WORDS', '20'))
 _PDF_OCR_MAX_PAGES = int(os.getenv('PDF_OCR_MAX_PAGES', '8'))
 _PDF_OCR_RENDER_DPI = int(os.getenv('PDF_OCR_RENDER_DPI', '160'))
 _PDF_OCR_MAX_OUTPUT_TOKENS = int(os.getenv('PDF_OCR_MAX_OUTPUT_TOKENS', '1500'))
-_PDF_OCR_MODEL = os.getenv('GEMINI_OCR_MODEL', os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview'))
+_PDF_OCR_MODEL = os.getenv('GEMINI_OCR_MODEL', os.getenv('GEMINI_MODEL', 'gemini-3.5-flash'))
 
 
 def _get_gemini_api_key() -> str:

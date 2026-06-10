@@ -11,10 +11,10 @@ from urllib import request as urllib_request
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_NAME = os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview')
+DEFAULT_MODEL_NAME = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash')
 GEMINI_MODEL_FALLBACKS = os.getenv(
 	'GEMINI_MODEL_FALLBACKS',
-	'gemini-2.5-flash,gemini-1.5-flash',
+	'gemini-3.1-pro,gemini-3-flash,gemini-2.5-pro,gemini-2.5-flash',
 )
 LOCAL_FALLBACK_MODEL = os.getenv('LOCAL_FALLBACK_MODEL', 'google/flan-t5-base')
 LOCAL_FALLBACK_URL = os.getenv('LOCAL_FALLBACK_URL', 'http://localhost:11434/api/generate')
