@@ -752,7 +752,7 @@ def _build_summary_repair_prompt(mode: str, broken_summary: str, notes_context: 
 			'Keep total length at 380-520 words and provide technically rich, non-redundant points.'
 		)
 
-	compact_notes = _summarization_context(notes_context, 10000)
+	compact_notes = _summarization_context(notes_context, 12000)
 	return (
 		'Repair the summary so it is systematic, concise, and well-structured.\n'
 		f'Formatting rules: {format_rules}\n'
@@ -924,19 +924,20 @@ def _build_notes_context_for_large_doc(text: str, mode: str) -> str:
 		total = len(chunks)
 		map_prompt = (
 			f'Extract high-signal academic content from lecture notes (part {index}/{total}).\n'
-			'Focus on: key concepts, definitions, cause-effect relationships, and important facts.\n'
+			'Focus on: key concepts, definitions, cause-effect relationships, dependencies, and important facts.\n'
+			'Capture the logical structure and why each idea matters in the larger context.\n'
 			'Output format — use these labels exactly:\n'
 			'Key Concepts:\n- ...\n'
-			'Relationships:\n- ...\n'
+			'Relationships and Dependencies:\n- ...\n'
 			'Important Facts:\n- ...\n'
 			'Rules:\n'
-			'- Only include information directly stated in this excerpt.\n'
-			'- Skip examples, anecdotes, and filler unless they define a concept.\n'
-			'- Write "- None" for any section with no valid content.\n'
+			'- Include both explicit facts and implicit connections you can infer from context.\n'
+			'- Examples are valuable if they illustrate a concept; do not skip them.\n'
+			'- Write "- None" for any section with genuinely no valid content.\n'
 			'- No title or commentary outside the required sections.\n\n'
 			f'Excerpt:\n{chunk}'
 		)
-		return _generate_text(map_prompt, temperature=0.1, max_output_tokens=500)
+		return _generate_text(map_prompt, temperature=0.25, max_output_tokens=520)
 
 	extracted_notes: List[str] = []
 	with ThreadPoolExecutor(max_workers=min(len(chunks), 4)) as pool:
@@ -1001,7 +1002,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 	tokens_by_mode = {'brief': 520, 'standard': 900, 'detailed': 1300}
 	refined = _generate_text(
 		prompt,
-		temperature=0.2 if mode == 'brief' else 0.22,
+		temperature=0.35 if mode == 'brief' else 0.38,
 		max_output_tokens=tokens_by_mode.get(mode, 900),
 	)
 	refined = _dedupe_bullets(refined)
@@ -1024,7 +1025,7 @@ def generate_gemini_summary(text: str, local_summary: str = '', summary_mode: st
 	if refined:
 		repair_prompt = _build_summary_repair_prompt(mode, refined, notes_context, local_summary, source_context=source_context)
 		repair_tokens = 520 if mode == 'brief' else (900 if mode == 'standard' else 1300)
-		repaired = _generate_text(repair_prompt, temperature=0.2, max_output_tokens=repair_tokens)
+		repaired = _generate_text(repair_prompt, temperature=0.35, max_output_tokens=repair_tokens)
 		repaired = _dedupe_bullets(repaired)
 		repaired = _finalize_summary_text(repaired)
 		repaired = _polish_summary_text(repaired, mode)

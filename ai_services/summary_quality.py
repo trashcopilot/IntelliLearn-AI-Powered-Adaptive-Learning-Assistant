@@ -102,11 +102,11 @@ def evaluate_summary_quality(summary_text: str, source_text: str, mode: str = 'd
         coverage_ratio = 0.0
 
     score = (
-        structure_score * 0.35
-        + grounded_ratio * 0.3
+        structure_score * 0.40
+        + grounded_ratio * 0.20
         + conciseness_score * 0.15
-        + (1 - redundancy_ratio) * 0.1
-        + min(1.0, coverage_ratio * 4.0) * 0.1
+        + (1 - redundancy_ratio) * 0.15
+        + min(1.0, coverage_ratio * 4.0) * 0.10
     )
     score = round(max(0.0, min(1.0, score)) * 100, 1)
 
