@@ -28,4 +28,5 @@ urlpatterns = [
     path('quiz/<int:attempt_id>/', student_quiz, name='student_quiz'),
     path('quiz/<int:attempt_id>/submit/', submit_answer, name='submit_answer'),
     path('quiz/<int:attempt_id>/next/', continue_to_next_question, name='continue_to_next_question'),
+    path('quiz/<int:attempt_id>/retry/', retry_question, name='retry_question'),
 ]

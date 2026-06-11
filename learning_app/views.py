@@ -334,6 +334,17 @@ def student_quiz(request, attempt_id):
             },
         )
 
+    # Support retrying a specific question (from review) by forcing it into the current view.
+    force_key = f'quiz_{attempt.AttemptID}_force_question'
+    force_qid = request.session.get(force_key)
+    if force_qid:
+        # If a forced question is set, load it directly (ensure it belongs to the educator/classroom)
+        forced_question = Question.objects.filter(pk=force_qid).first()
+        # Clear the force key so it only applies once
+        request.session.pop(force_key, None)
+        if forced_question and forced_question.Lecture.UploadedBy_id == selected_educator_id:
+            question = forced_question
+
     answered_ids = attempt.responses.values_list('Question_id', flat=True)
     question = _select_next_question(
         concept_id=concept_id,
@@ -372,6 +383,7 @@ def student_quiz(request, attempt_id):
                 {
                     'question_text': question_obj.QuestionText,
                     'question_type': question_obj.QuestionType,
+                    'question_id': question_obj.QuestionID,
                     'student_answer': (response.StudentAnswerText or '').strip(),
                     'is_correct': response.IsCorrect,
                     'correct_answer_display': correct_answer_display,
@@ -481,6 +493,35 @@ def continue_to_next_question(request, attempt_id):
     request.session.pop(f'micro_lesson_{attempt.AttemptID}', None)
 
     _trace_ai(f'📚 Micro-Lesson Cleared: attempt_id={attempt.AttemptID}, moving to next question')
+
+    return redirect('learning:student_quiz', attempt_id=attempt.AttemptID)
+
+
+@login_required
+def retry_question(request, attempt_id):
+    """Allow a student to retry a wrong question.
+
+    Expects POST with optional 'question_id'. If provided, deletes the stored response
+    for that question on the attempt and forces the quiz to present that question again.
+    """
+    attempt = get_object_or_404(QuizAttempt, pk=attempt_id, User=request.user)
+    if request.method != 'POST':
+        return redirect('learning:student_quiz', attempt_id=attempt.AttemptID)
+
+    qid = request.POST.get('question_id') or request.session.get(f'feedback_source_{attempt.AttemptID}')
+    if not qid:
+        return redirect('learning:student_quiz', attempt_id=attempt.AttemptID)
+
+    # Remove previous response for this question so it becomes available to answer again
+    QuestionResponse.objects.filter(Attempt=attempt, Question_id=qid).delete()
+
+    # Clear micro-lesson/feedback state and set a force key so student_quiz will show this question
+    request.session.pop(f'feedback_pending_{attempt.AttemptID}', None)
+    request.session.pop(f'feedback_source_{attempt.AttemptID}', None)
+    request.session.pop(f'micro_lesson_{attempt.AttemptID}', None)
+    request.session[f'quiz_{attempt.AttemptID}_force_question'] = int(qid)
+
+    _trace_ai(f'↩️ Retry requested: attempt_id={attempt.AttemptID}, question_id={qid}')
 
     return redirect('learning:student_quiz', attempt_id=attempt.AttemptID)
 

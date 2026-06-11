@@ -9,7 +9,17 @@
         <p class="mb-0 quiz-text-block"><strong>Previous question:</strong> {{ source_question.QuestionText|linebreaksbr }}</p>
     {% endif %}
 </div>
-<form method="post" action="{% url 'learning:continue_to_next_question' attempt.pk %}">
-    {% csrf_token %}
-    <button type="submit" class="btn btn-primary">Next Question</button>
-</form>
+<div class="d-flex gap-2">
+    {% if source_question %}
+    <form method="post" action="{% url 'learning:retry_question' attempt.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="question_id" value="{{ source_question.QuestionID }}">
+        <button type="submit" class="btn btn-outline-secondary">Try Again</button>
+    </form>
+    {% endif %}
+
+    <form method="post" action="{% url 'learning:continue_to_next_question' attempt.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary">Next Question</button>
+    </form>
+</div>
