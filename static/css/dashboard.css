@@ -20,6 +20,25 @@
     font-size: 0.9rem;
 }
 
+.dashboard-switch-class-btn {
+    min-width: 10.5rem;
+    border-radius: 999px;
+    box-shadow: 0 0.65rem 1.5rem rgba(13, 110, 253, 0.22);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.dashboard-switch-class-btn:hover,
+.dashboard-switch-class-btn:focus {
+    transform: translateY(-1px);
+    box-shadow: 0 0.85rem 1.8rem rgba(13, 110, 253, 0.3);
+}
+
+.dashboard-switch-class-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 0.45rem 1.1rem rgba(13, 110, 253, 0.22);
+}
+
 .dashboard-grid {
     align-items: stretch;
     gap: 1rem;

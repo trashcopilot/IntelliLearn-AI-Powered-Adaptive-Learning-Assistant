@@ -15,7 +15,9 @@
         <strong>Selected classroom:</strong> {{ selected_enrollment.Classroom.Name }}
         <span class="text-muted ms-2">Educator: {{ selected_enrollment.Classroom.CreatedBy.username }}</span>
     </div>
-    <a href="{% url 'learning:student_classrooms' %}" class="btn btn-outline-primary btn-sm">Switch Class</a>
+    <a href="{% url 'learning:student_classrooms' %}" class="btn btn-primary btn-lg dashboard-switch-class-btn">
+        <i class="bi bi-arrow-left-right me-1"></i>Switch Class
+    </a>
 </div>
 {% endif %}
 
