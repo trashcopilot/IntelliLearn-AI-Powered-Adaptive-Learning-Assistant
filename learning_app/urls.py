@@ -5,6 +5,7 @@ from .views import (
     create_classroom,
     join_classroom,
     regenerate_classroom_code,
+    retry_question,
     select_classroom,
     set_classroom_status,
     start_quiz,
